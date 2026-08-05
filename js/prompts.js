@@ -124,6 +124,51 @@ function buildAnnouncementPrompt(project) {
   ].join('\n');
 }
 
+/* ───────────────── 0단계-B: 사업계획서 양식 분석 ───────────────── */
+
+function buildFormPrompt(project) {
+  const raw = (project.form && project.form.rawText) || '';
+  return [
+    evaluatorPersona(),
+    '',
+    '아래는 주관기관이 배포한 <사업계획서 양식> 원문이다. 이 양식의 구조를 그대로 추출하라.',
+    '',
+    '반드시 지킬 것:',
+    '- 항목명은 양식에 적힌 표현 그대로 옮긴다. 번호·괄호·띄어쓰기까지 바꾸지 마라.',
+    '- 양식에는 항목마다 작성 안내문(예: "※ 창업아이템의 필요성을 기술")이 붙어 있다.',
+    '  이 안내문을 요약하지 말고 원문 그대로 guide 에 담아라. 실제 작성의 기준이 된다.',
+    '- 양식에 표 틀(요약표, 예산표, 일정표 등)이 있으면 열 이름과 행 항목을 그대로 옮겨라.',
+    '- 분량 제한(페이지 수, "○○자 이상/이내")이 항목별로 적혀 있으면 반드시 담아라.',
+    '- 양식에 없는 항목을 임의로 추가하지 마라. 없는 정보는 null 로 둔다.',
+    '',
+    '아래 스키마의 JSON 하나만 ```json 코드블록으로 출력하라.',
+    '',
+    '```json',
+    JSON.stringify({
+      title: '양식 문서 제목 (예: 2026년 예비창업패키지 사업계획서)',
+      pageLimit: '문서 전체 페이지 제한 (숫자, 없으면 null)',
+      summaryTable: {
+        caption: '요약표/개요표 제목 (없으면 null)',
+        rows: [{ label: '항목명 (예: 창업아이템명)', hint: '기재 요령이 적혀 있으면 그대로' }]
+      },
+      sections: [{
+        title: '양식의 항목명 (원문 그대로)',
+        guide: '양식에 적힌 작성 안내문 원문 (요약 금지)',
+        score: '배점(숫자, 양식/공고에 있으면)',
+        pages: '권장 페이지 수(숫자, 없으면 null)',
+        minChars: '최소 글자 수(숫자, 없으면 null)',
+        maxChars: '최대 글자 수(숫자, 없으면 null)',
+        tables: [{ caption: '이 항목에 포함된 표 제목', columns: ['열 이름들'], rows: ['행 항목이 정해져 있으면'] }]
+      }],
+      notes: ['양식에 적힌 작성 유의사항 (글꼴, 여백, 분량, 첨부 등)']
+    }, null, 2),
+    '```',
+    '',
+    '── 사업계획서 양식 원문 ──',
+    raw
+  ].join('\n');
+}
+
 /* ─────────────────────────── 1단계: 딥테크 아이템 발굴 ─────────────────────────── */
 
 function buildIdeaPrompt(project, fieldIds, userDirection) {
@@ -363,13 +408,29 @@ function buildSectionPrompt(project, section) {
     })
     .filter(Boolean);
 
+  const fromForm = section.source === 'form';
+  const limits = limitText(section);
+  const tableSpecs = (section.tables || []).filter((t) => t && (t.caption || (t.columns || []).length));
+
   return [
     evaluatorPersona(true),
     '',
-    `"${program.name}" 사업계획서의 다음 섹션을 작성한다.`,
-    `- 섹션: ${section.title}`,
-    `- 배점: ${section.score || '명시 없음'}점 / 권장 분량: 약 ${section.pages}페이지 (A4, 11pt 기준 1페이지 ≈ 공백 포함 1,400자)`,
-    `- 이 섹션에서 심사위원이 확인하려는 것: ${section.guide}`,
+    fromForm
+      ? '주관기관이 배포한 사업계획서 양식의 항목 하나를 작성한다. 양식이 절대 기준이다.'
+      : `"${program.name}" 사업계획서의 다음 섹션을 작성한다.`,
+    `- 항목명: ${section.title}`,
+    `- 배점: ${section.score || '명시 없음'}점` + (limits ? ` / 분량: ${limits}` : ` / 권장 분량: 약 ${section.pages}페이지`),
+    '  (A4 11pt 기준 1페이지 ≈ 공백 포함 1,400자)',
+    fromForm
+      ? '- 양식에 적힌 작성 안내문 (이 지시를 그대로 따를 것):\n  ' + String(section.guide || '(안내문 없음)').split('\n').join('\n  ')
+      : `- 이 섹션에서 심사위원이 확인하려는 것: ${section.guide}`,
+    tableSpecs.length
+      ? '- 이 항목에는 양식이 정한 표가 있다. 아래 열 구성을 그대로 지켜 마크다운 표로 채워라:\n' +
+        tableSpecs.map((t) => '  · ' + (t.caption || '표') +
+          ((t.columns || []).length ? ' — 열: ' + t.columns.join(' | ') : '') +
+          ((t.rows || []).length ? ' / 행: ' + t.rows.join(', ') : '')).join('\n')
+      : '',
+    fromForm ? '- 양식에 없는 항목을 새로 만들지 말고, 항목명도 바꾸지 마라.' : '',
     '',
     selectedIdeaContext(project),
     planningContext(project),
@@ -379,6 +440,9 @@ function buildSectionPrompt(project, section) {
     done.length ? '\n' + done.join('\n\n') : '',
     '',
     '작성 규칙:',
+    fromForm ? '- 위 안내문이 요구한 내용을 빠짐없이 담아라. 안내문에 없는 이야기로 분량을 채우지 마라.' : '',
+    section.minChars ? `- 최소 ${section.minChars.toLocaleString()}자 요건이 있다. 공백 포함 이 분량을 반드시 넘겨라.` : '',
+    section.maxChars ? `- 최대 ${section.maxChars.toLocaleString()}자를 넘기지 마라.` : '',
     '- 개조식(□/○/-)으로 작성. 서술형 문단 금지.',
     '- 표가 효과적인 내용(경쟁 비교, 예산, 일정, KPI)은 마크다운 표로 작성 (문서 변환 시 표로 렌더링됨).',
     '- 기획(PSST)에서 확정한 수치를 그대로 사용하라. 임의로 바꾸면 문서 간 불일치로 감점된다.',
@@ -411,15 +475,30 @@ function buildReviewPrompt(project) {
     '2. 감점 요인 전수 점검: 위 작성 원칙의 감점 목록 각각에 대해 위반 여부와 위치를 지적',
     '3. 일관성 검사: 요약-본문-섹션 간 수치 불일치(매출, BEP, 고객 수, KPI)를 전부 찾아라',
     '4. 【확인】 마커와 근거 없는 수치 목록화: 제출 전 반드시 채워야 할 항목',
-    '5. 압박 질문 시뮬레이션: 대면평가 단골 질문 4개에 이 계획서가 방어되는지 판정하고, 방어 답변 스크립트를 작성하라.',
+    '5. 양식 준수 점검: 배포된 양식이 있다면 (가) 항목이 빠짐없이 있는지 (나) 항목명이 양식 표현 그대로인지',
+    '   (다) 양식이 요구한 표가 들어갔는지 (라) 항목별 분량 요건(페이지·글자수)을 지켰는지 표로 판정하라.',
+    '6. 압박 질문 시뮬레이션: 대면평가 단골 질문 4개에 이 계획서가 방어되는지 판정하고, 방어 답변 스크립트를 작성하라.',
     '   ① "데이터 확보는 어떻게 할 것인가?" ② "성능 지표를 어떻게 신뢰할 수 있는가?(측정 환경/방법)"',
     '   ③ "경쟁 기술 대비 비용 효율성이 낮은 것 아닌가?" ④ "대기업/경쟁사가 따라 하면 어떻게 이길 것인가?(해자)"',
-    '6. 종합: 합격선 통과 여부 판정과, 점수를 가장 많이 올릴 수정 3가지 (수정 지시는 복사해서 바로 쓸 수 있게 구체적으로)',
+    '7. 종합: 합격선 통과 여부 판정과, 점수를 가장 많이 올릴 수정 3가지 (수정 지시는 복사해서 바로 쓸 수 있게 구체적으로)',
     '',
+    formRequirements(project),
     '── 사업계획서 본문 ──',
     body,
     project.poc ? '\n── 붙임: PoC 검증 계획 ──\n' + pocToMarkdown(project.poc) : ''
   ].filter(Boolean).join('\n');
+}
+
+/** 모의심사에서 대조할 양식 요건 요약 */
+function formRequirements(project) {
+  const secs = getSections(project);
+  if (!secs.some((s) => s.source === 'form')) return '';
+  const rows = secs.map((s) => `- ${s.title}` +
+    (limitText(s) ? ` [분량: ${limitText(s)}]` : '') +
+    ((s.tables || []).length ? ` [필수 표: ${s.tables.map((t) => t.caption || '표').join(', ')}]` : ''));
+  const notes = (project.form && project.form.analysis && project.form.analysis.notes) || [];
+  return ['── 배포된 양식이 요구하는 항목과 조건 ──', ...rows,
+    notes.length ? '작성 유의사항: ' + notes.join(' / ') : ''].filter(Boolean).join('\n') + '\n';
 }
 
 /* ─────────────────────────── 5단계: IR Deck ─────────────────────────── */
@@ -468,19 +547,49 @@ function buildDeckPrompt(project) {
 /* ─────────────────────────── 공통 유틸 ─────────────────────────── */
 
 /** 현재 프로젝트의 유효 섹션 목록 (공고문 분석이 목차를 덮어썼으면 그것을 사용) */
+/**
+ * 작성 목차를 정한다.
+ * 기관이 배포한 양식이 있으면 그것이 절대 기준이고(항목명·안내문·표·분량),
+ * 없으면 공고문에서 뽑은 목차, 그것도 없으면 사업 유형의 기본 목차를 쓴다.
+ */
 function getSections(project) {
+  const form = project.form;
+  if (form && form.analysis && Array.isArray(form.analysis.sections) && form.analysis.sections.length) {
+    return form.analysis.sections.map((s, i) => ({
+      id: 'f' + i,
+      source: 'form',
+      title: s.title || '항목 ' + (i + 1),
+      score: Number(s.score) || 0,
+      pages: Number(s.pages) || 1,
+      guide: s.guide || '',
+      minChars: Number(s.minChars) || 0,
+      maxChars: Number(s.maxChars) || 0,
+      tables: Array.isArray(s.tables) ? s.tables : []
+    }));
+  }
   const a = project.announcement;
   if (a && a.analysis && Array.isArray(a.analysis.sections) && a.analysis.sections.length) {
     return a.analysis.sections.map((s, i) => ({
       id: 'a' + i,
+      source: 'announcement',
       title: s.title || '항목 ' + (i + 1),
       score: Number(s.score) || 0,
       pages: Number(s.pages) || 1,
-      guide: s.guide || ''
+      guide: s.guide || '',
+      minChars: 0, maxChars: 0, tables: []
     }));
   }
   const program = PROGRAMS[project.programType] || PROGRAMS.package;
-  return program.sections;
+  return program.sections.map((s) => Object.assign({ source: 'default', minChars: 0, maxChars: 0, tables: [] }, s));
+}
+
+/** 양식이 요구하는 분량 조건을 사람이 읽는 문장으로 */
+function limitText(sec) {
+  const parts = [];
+  if (sec.pages) parts.push('약 ' + sec.pages + '페이지');
+  if (sec.minChars) parts.push('최소 ' + sec.minChars.toLocaleString() + '자');
+  if (sec.maxChars) parts.push('최대 ' + sec.maxChars.toLocaleString() + '자');
+  return parts.join(' · ');
 }
 
 /** 흔한 LLM 출력 오류를 고쳐 다시 파싱을 시도한다 (마지막 수단) */
@@ -567,6 +676,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     evaluatorPersona, buildAnnouncementPrompt, buildIdeaPrompt, buildReframePrompt, buildPlanningPrompt,
     buildPocPrompt, pocToMarkdown, buildSectionPrompt, buildReviewPrompt, buildDeckPrompt, getSections,
+    buildFormPrompt, limitText, formRequirements,
     extractJson, findJsonChunks, repairJson, looksLikePrompt
   };
 }

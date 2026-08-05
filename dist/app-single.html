@@ -138,6 +138,11 @@ textarea:focus, input:focus { outline: 2px solid #bcd2f5; border-color: var(--ac
 .section-item .status { font-size: 12px; border-radius: 5px; padding: 2px 8px; flex-shrink: 0; }
 .status.done { background: #e2f6ea; color: var(--ok); }
 .status.todo { background: #f2f4f8; color: var(--muted); }
+.status.warn { background: #fdf3e3; color: var(--warn); }
+.warn-inline { color: var(--warn); font-weight: 700; }
+.ok-inline { color: var(--ok); font-weight: 700; }
+.howto { margin: 8px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
+.howto li { margin: 3px 0; }
 .section-item .meta { font-size: 12px; color: var(--muted); margin-left: auto; flex-shrink: 0; }
 
 .preview {
@@ -21347,6 +21352,51 @@ function buildAnnouncementPrompt(project) {
   ].join('\n');
 }
 
+/* ───────────────── 0단계-B: 사업계획서 양식 분석 ───────────────── */
+
+function buildFormPrompt(project) {
+  const raw = (project.form && project.form.rawText) || '';
+  return [
+    evaluatorPersona(),
+    '',
+    '아래는 주관기관이 배포한 <사업계획서 양식> 원문이다. 이 양식의 구조를 그대로 추출하라.',
+    '',
+    '반드시 지킬 것:',
+    '- 항목명은 양식에 적힌 표현 그대로 옮긴다. 번호·괄호·띄어쓰기까지 바꾸지 마라.',
+    '- 양식에는 항목마다 작성 안내문(예: "※ 창업아이템의 필요성을 기술")이 붙어 있다.',
+    '  이 안내문을 요약하지 말고 원문 그대로 guide 에 담아라. 실제 작성의 기준이 된다.',
+    '- 양식에 표 틀(요약표, 예산표, 일정표 등)이 있으면 열 이름과 행 항목을 그대로 옮겨라.',
+    '- 분량 제한(페이지 수, "○○자 이상/이내")이 항목별로 적혀 있으면 반드시 담아라.',
+    '- 양식에 없는 항목을 임의로 추가하지 마라. 없는 정보는 null 로 둔다.',
+    '',
+    '아래 스키마의 JSON 하나만 ```json 코드블록으로 출력하라.',
+    '',
+    '```json',
+    JSON.stringify({
+      title: '양식 문서 제목 (예: 2026년 예비창업패키지 사업계획서)',
+      pageLimit: '문서 전체 페이지 제한 (숫자, 없으면 null)',
+      summaryTable: {
+        caption: '요약표/개요표 제목 (없으면 null)',
+        rows: [{ label: '항목명 (예: 창업아이템명)', hint: '기재 요령이 적혀 있으면 그대로' }]
+      },
+      sections: [{
+        title: '양식의 항목명 (원문 그대로)',
+        guide: '양식에 적힌 작성 안내문 원문 (요약 금지)',
+        score: '배점(숫자, 양식/공고에 있으면)',
+        pages: '권장 페이지 수(숫자, 없으면 null)',
+        minChars: '최소 글자 수(숫자, 없으면 null)',
+        maxChars: '최대 글자 수(숫자, 없으면 null)',
+        tables: [{ caption: '이 항목에 포함된 표 제목', columns: ['열 이름들'], rows: ['행 항목이 정해져 있으면'] }]
+      }],
+      notes: ['양식에 적힌 작성 유의사항 (글꼴, 여백, 분량, 첨부 등)']
+    }, null, 2),
+    '```',
+    '',
+    '── 사업계획서 양식 원문 ──',
+    raw
+  ].join('\n');
+}
+
 /* ─────────────────────────── 1단계: 딥테크 아이템 발굴 ─────────────────────────── */
 
 function buildIdeaPrompt(project, fieldIds, userDirection) {
@@ -21586,13 +21636,29 @@ function buildSectionPrompt(project, section) {
     })
     .filter(Boolean);
 
+  const fromForm = section.source === 'form';
+  const limits = limitText(section);
+  const tableSpecs = (section.tables || []).filter((t) => t && (t.caption || (t.columns || []).length));
+
   return [
     evaluatorPersona(true),
     '',
-    `"${program.name}" 사업계획서의 다음 섹션을 작성한다.`,
-    `- 섹션: ${section.title}`,
-    `- 배점: ${section.score || '명시 없음'}점 / 권장 분량: 약 ${section.pages}페이지 (A4, 11pt 기준 1페이지 ≈ 공백 포함 1,400자)`,
-    `- 이 섹션에서 심사위원이 확인하려는 것: ${section.guide}`,
+    fromForm
+      ? '주관기관이 배포한 사업계획서 양식의 항목 하나를 작성한다. 양식이 절대 기준이다.'
+      : `"${program.name}" 사업계획서의 다음 섹션을 작성한다.`,
+    `- 항목명: ${section.title}`,
+    `- 배점: ${section.score || '명시 없음'}점` + (limits ? ` / 분량: ${limits}` : ` / 권장 분량: 약 ${section.pages}페이지`),
+    '  (A4 11pt 기준 1페이지 ≈ 공백 포함 1,400자)',
+    fromForm
+      ? '- 양식에 적힌 작성 안내문 (이 지시를 그대로 따를 것):\n  ' + String(section.guide || '(안내문 없음)').split('\n').join('\n  ')
+      : `- 이 섹션에서 심사위원이 확인하려는 것: ${section.guide}`,
+    tableSpecs.length
+      ? '- 이 항목에는 양식이 정한 표가 있다. 아래 열 구성을 그대로 지켜 마크다운 표로 채워라:\n' +
+        tableSpecs.map((t) => '  · ' + (t.caption || '표') +
+          ((t.columns || []).length ? ' — 열: ' + t.columns.join(' | ') : '') +
+          ((t.rows || []).length ? ' / 행: ' + t.rows.join(', ') : '')).join('\n')
+      : '',
+    fromForm ? '- 양식에 없는 항목을 새로 만들지 말고, 항목명도 바꾸지 마라.' : '',
     '',
     selectedIdeaContext(project),
     planningContext(project),
@@ -21602,6 +21668,9 @@ function buildSectionPrompt(project, section) {
     done.length ? '\n' + done.join('\n\n') : '',
     '',
     '작성 규칙:',
+    fromForm ? '- 위 안내문이 요구한 내용을 빠짐없이 담아라. 안내문에 없는 이야기로 분량을 채우지 마라.' : '',
+    section.minChars ? `- 최소 ${section.minChars.toLocaleString()}자 요건이 있다. 공백 포함 이 분량을 반드시 넘겨라.` : '',
+    section.maxChars ? `- 최대 ${section.maxChars.toLocaleString()}자를 넘기지 마라.` : '',
     '- 개조식(□/○/-)으로 작성. 서술형 문단 금지.',
     '- 표가 효과적인 내용(경쟁 비교, 예산, 일정, KPI)은 마크다운 표로 작성 (문서 변환 시 표로 렌더링됨).',
     '- 기획(PSST)에서 확정한 수치를 그대로 사용하라. 임의로 바꾸면 문서 간 불일치로 감점된다.',
@@ -21634,15 +21703,30 @@ function buildReviewPrompt(project) {
     '2. 감점 요인 전수 점검: 위 작성 원칙의 감점 목록 각각에 대해 위반 여부와 위치를 지적',
     '3. 일관성 검사: 요약-본문-섹션 간 수치 불일치(매출, BEP, 고객 수, KPI)를 전부 찾아라',
     '4. 【확인】 마커와 근거 없는 수치 목록화: 제출 전 반드시 채워야 할 항목',
-    '5. 압박 질문 시뮬레이션: 대면평가 단골 질문 4개에 이 계획서가 방어되는지 판정하고, 방어 답변 스크립트를 작성하라.',
+    '5. 양식 준수 점검: 배포된 양식이 있다면 (가) 항목이 빠짐없이 있는지 (나) 항목명이 양식 표현 그대로인지',
+    '   (다) 양식이 요구한 표가 들어갔는지 (라) 항목별 분량 요건(페이지·글자수)을 지켰는지 표로 판정하라.',
+    '6. 압박 질문 시뮬레이션: 대면평가 단골 질문 4개에 이 계획서가 방어되는지 판정하고, 방어 답변 스크립트를 작성하라.',
     '   ① "데이터 확보는 어떻게 할 것인가?" ② "성능 지표를 어떻게 신뢰할 수 있는가?(측정 환경/방법)"',
     '   ③ "경쟁 기술 대비 비용 효율성이 낮은 것 아닌가?" ④ "대기업/경쟁사가 따라 하면 어떻게 이길 것인가?(해자)"',
-    '6. 종합: 합격선 통과 여부 판정과, 점수를 가장 많이 올릴 수정 3가지 (수정 지시는 복사해서 바로 쓸 수 있게 구체적으로)',
+    '7. 종합: 합격선 통과 여부 판정과, 점수를 가장 많이 올릴 수정 3가지 (수정 지시는 복사해서 바로 쓸 수 있게 구체적으로)',
     '',
+    formRequirements(project),
     '── 사업계획서 본문 ──',
     body,
     project.poc ? '\n── 붙임: PoC 검증 계획 ──\n' + pocToMarkdown(project.poc) : ''
   ].filter(Boolean).join('\n');
+}
+
+/** 모의심사에서 대조할 양식 요건 요약 */
+function formRequirements(project) {
+  const secs = getSections(project);
+  if (!secs.some((s) => s.source === 'form')) return '';
+  const rows = secs.map((s) => `- ${s.title}` +
+    (limitText(s) ? ` [분량: ${limitText(s)}]` : '') +
+    ((s.tables || []).length ? ` [필수 표: ${s.tables.map((t) => t.caption || '표').join(', ')}]` : ''));
+  const notes = (project.form && project.form.analysis && project.form.analysis.notes) || [];
+  return ['── 배포된 양식이 요구하는 항목과 조건 ──', ...rows,
+    notes.length ? '작성 유의사항: ' + notes.join(' / ') : ''].filter(Boolean).join('\n') + '\n';
 }
 
 /* ─────────────────────────── 5단계: IR Deck ─────────────────────────── */
@@ -21691,19 +21775,49 @@ function buildDeckPrompt(project) {
 /* ─────────────────────────── 공통 유틸 ─────────────────────────── */
 
 /** 현재 프로젝트의 유효 섹션 목록 (공고문 분석이 목차를 덮어썼으면 그것을 사용) */
+/**
+ * 작성 목차를 정한다.
+ * 기관이 배포한 양식이 있으면 그것이 절대 기준이고(항목명·안내문·표·분량),
+ * 없으면 공고문에서 뽑은 목차, 그것도 없으면 사업 유형의 기본 목차를 쓴다.
+ */
 function getSections(project) {
+  const form = project.form;
+  if (form && form.analysis && Array.isArray(form.analysis.sections) && form.analysis.sections.length) {
+    return form.analysis.sections.map((s, i) => ({
+      id: 'f' + i,
+      source: 'form',
+      title: s.title || '항목 ' + (i + 1),
+      score: Number(s.score) || 0,
+      pages: Number(s.pages) || 1,
+      guide: s.guide || '',
+      minChars: Number(s.minChars) || 0,
+      maxChars: Number(s.maxChars) || 0,
+      tables: Array.isArray(s.tables) ? s.tables : []
+    }));
+  }
   const a = project.announcement;
   if (a && a.analysis && Array.isArray(a.analysis.sections) && a.analysis.sections.length) {
     return a.analysis.sections.map((s, i) => ({
       id: 'a' + i,
+      source: 'announcement',
       title: s.title || '항목 ' + (i + 1),
       score: Number(s.score) || 0,
       pages: Number(s.pages) || 1,
-      guide: s.guide || ''
+      guide: s.guide || '',
+      minChars: 0, maxChars: 0, tables: []
     }));
   }
   const program = PROGRAMS[project.programType] || PROGRAMS.package;
-  return program.sections;
+  return program.sections.map((s) => Object.assign({ source: 'default', minChars: 0, maxChars: 0, tables: [] }, s));
+}
+
+/** 양식이 요구하는 분량 조건을 사람이 읽는 문장으로 */
+function limitText(sec) {
+  const parts = [];
+  if (sec.pages) parts.push('약 ' + sec.pages + '페이지');
+  if (sec.minChars) parts.push('최소 ' + sec.minChars.toLocaleString() + '자');
+  if (sec.maxChars) parts.push('최대 ' + sec.maxChars.toLocaleString() + '자');
+  return parts.join(' · ');
 }
 
 /** 흔한 LLM 출력 오류를 고쳐 다시 파싱을 시도한다 (마지막 수단) */
@@ -21790,6 +21904,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     evaluatorPersona, buildAnnouncementPrompt, buildIdeaPrompt, buildReframePrompt, buildPlanningPrompt,
     buildPocPrompt, pocToMarkdown, buildSectionPrompt, buildReviewPrompt, buildDeckPrompt, getSections,
+    buildFormPrompt, limitText, formRequirements,
     extractJson, findJsonChunks, repairJson, looksLikePrompt
   };
 }
@@ -22636,7 +22751,9 @@ if (typeof module !== 'undefined') {
     state.projects[id] = {
       id, name: name || '새 프로젝트', createdAt: Date.now(), updatedAt: Date.now(),
       programType: 'package',
-      company: {}, announcement: { rawText: '', analysis: null },
+      company: {},
+      announcement: { rawText: '', analysis: null, files: [] },
+      form: { rawText: '', analysis: null, files: [] },
       ideas: [], selectedIdeaIndex: -1,
       reframeBiz: '',
       planning: { raw: '' }, poc: null, sections: {}, review: { content: '' }, deck: null
@@ -22652,7 +22769,7 @@ if (typeof module !== 'undefined') {
     if (!p) return false;
     switch (stepId) {
       case 'setup': return !!p.programType;
-      case 'announce': return !!(p.announcement && p.announcement.analysis);
+      case 'announce': return !!((p.form && p.form.analysis) || (p.announcement && p.announcement.analysis));
       case 'idea': return p.selectedIdeaIndex >= 0 && !!(p.ideas || [])[p.selectedIdeaIndex];
       case 'plan': return !!(p.planning && p.planning.raw);
       case 'poc': return !!(p.poc && Array.isArray(p.poc.metrics) && p.poc.metrics.length);
@@ -22836,27 +22953,9 @@ if (typeof module !== 'undefined') {
       <div class="btn-row"><button class="btn big" data-act="goStep" data-step="announce">다음: 공고문 분석 →</button></div>`;
   }
 
-  function renderAnnounce(p) {
-    const a = p.announcement || {};
-    const an = a.analysis;
-    let result = '';
-    if (an) {
-      const secRows = (an.sections || []).map((s) => `<tr><td>${esc2(s.title)}</td><td>${esc2(s.score == null ? '-' : s.score)}</td><td>${esc2(s.pages == null ? '-' : s.pages)}</td><td>${esc2(s.guide || '')}</td></tr>`).join('');
-      result = `
-        <div class="card"><h3>분석 결과</h3>
-          <div class="preview">
-            <p><b>${esc2(an.title || '(공고명 미확인)')}</b> — ${esc2(an.agency || '')}</p>
-            <p>마감: ${esc2(an.deadline || '-')} · 페이지 제한: ${esc2(an.pageLimit || '-')} · 지원 규모: ${esc2(an.budget || '-')}</p>
-            <p>심사 기준: ${esc2(an.evaluationCriteria || '-')}</p>
-            ${(an.keywords || []).map((k) => `<span class="pill">${esc2(k)}</span>`).join('')}
-            ${secRows ? `<table><tr><th>목차 (공고 원문 그대로)</th><th>배점</th><th>권장 p</th><th>심사위원 확인 포인트</th></tr>${secRows}</table>` : ''}
-            ${(an.redFlags || []).length ? `<p><b>⚠ 실격/감점 조건:</b> ${an.redFlags.map(esc2).join(' · ')}</p>` : ''}
-            ${an.fitAdvice ? `<p><b>프레이밍 조언:</b> ${esc2(an.fitAdvice)}</p>` : ''}
-          </div>
-          ${(an.sections || []).length ? '<div class="alert ok">이 목차가 4단계 사업계획서 작성의 목차로 자동 적용됩니다 (공고 양식 우선 원칙).</div>' : ''}
-        </div>`;
-    }
-    const fileRows = (a.files || []).map((f) => `
+  /** 업로드한 파일 목록 표시 */
+  function fileRowsHtml(files) {
+    return (files || []).map((f) => `
       <div class="file-row ${f.error ? 'bad' : ''}">
         <span class="file-kind">${esc2(f.kind || '?')}</span>
         <span class="file-name">${esc2(f.name)}</span>
@@ -22864,31 +22963,87 @@ if (typeof module !== 'undefined') {
           ? `<span class="file-msg bad">${esc2(f.error)}</span>`
           : `<span class="file-msg">${f.chars.toLocaleString()}자 추출${f.warning ? ' · ⚠ ' + esc2(f.warning) : ''}</span>`}
       </div>`).join('');
+  }
+
+  function dropZoneHtml(target, label) {
+    return `
+      <div class="drop-zone" data-act="pickFiles" data-target="${target}">
+        <div class="drop-icon">📄</div>
+        <div><b>${esc2(label)}</b></div>
+        <div class="hint">HWP · HWPX · PDF · DOCX · PPTX · TXT — 여러 개를 한 번에 올릴 수 있습니다</div>
+      </div>`;
+  }
+
+  function renderAnnounce(p) {
+    const a = p.announcement || {};
+    const fm = p.form || {};
+    const an = a.analysis;
+    const fa = fm.analysis;
+
+    let annResult = '';
+    if (an) {
+      const secRows = (an.sections || []).map((x) => `<tr><td>${esc2(x.title)}</td><td>${esc2(x.score == null ? '-' : x.score)}</td><td>${esc2(x.guide || '')}</td></tr>`).join('');
+      annResult = `
+        <div class="preview">
+          <p><b>${esc2(an.title || '(공고명 미확인)')}</b> — ${esc2(an.agency || '')}</p>
+          <p>마감: ${esc2(an.deadline || '-')} · 페이지 제한: ${esc2(an.pageLimit || '-')} · 지원 규모: ${esc2(an.budget || '-')}</p>
+          <p>심사 기준: ${esc2(an.evaluationCriteria || '-')}</p>
+          ${(an.keywords || []).map((k) => `<span class="pill">${esc2(k)}</span>`).join('')}
+          ${secRows && !fa ? `<table><tr><th>공고문에서 뽑은 목차</th><th>배점</th><th>확인 포인트</th></tr>${secRows}</table>` : ''}
+          ${(an.redFlags || []).length ? `<p><b>⚠ 실격/감점 조건:</b> ${an.redFlags.map(esc2).join(' · ')}</p>` : ''}
+          ${an.fitAdvice ? `<p><b>프레이밍 조언:</b> ${esc2(an.fitAdvice)}</p>` : ''}
+        </div>`;
+    }
+
+    let formResult = '';
+    if (fa) {
+      const rows = (fa.sections || []).map((x) => {
+        const limit = [x.pages ? x.pages + 'p' : '', x.minChars ? '≥' + x.minChars + '자' : '', x.maxChars ? '≤' + x.maxChars + '자' : '']
+          .filter(Boolean).join(' · ');
+        const tables = (x.tables || []).map((t) => t.caption || '표').join(', ');
+        return `<tr><td>${esc2(x.title)}</td><td>${esc2(x.score == null ? '-' : x.score)}</td><td>${esc2(limit || '-')}</td><td>${esc2(tables || '-')}</td><td>${esc2((x.guide || '').slice(0, 120))}</td></tr>`;
+      }).join('');
+      const st = fa.summaryTable;
+      formResult = `
+        <div class="preview">
+          <p><b>${esc2(fa.title || '사업계획서 양식')}</b>${fa.pageLimit ? ` · 전체 ${esc2(fa.pageLimit)}페이지 이내` : ''}</p>
+          ${st && (st.rows || []).length ? `<p><b>${esc2(st.caption || '요약표')}</b>: ${(st.rows || []).map((r) => esc2(r.label)).join(' · ')}</p>` : ''}
+          <table><tr><th>양식 항목 (원문 그대로)</th><th>배점</th><th>분량</th><th>필수 표</th><th>작성 안내문</th></tr>${rows}</table>
+          ${(fa.notes || []).length ? `<p><b>작성 유의사항:</b> ${fa.notes.map(esc2).join(' / ')}</p>` : ''}
+        </div>
+        <div class="alert ok">이 양식이 <b>4단계 작성의 절대 기준</b>이 됩니다. 항목명·작성 안내문·필수 표·분량 요건이 그대로 프롬프트에 들어가고, 5단계 모의심사에서 양식 준수 여부를 점검합니다.</div>`;
+    }
 
     return `
-      <h1 class="step-title">0. 공고문 분석 <span class="hint" style="display:inline">(선택 단계 — 타겟 공고가 있으면 강력 추천)</span></h1>
-      <p class="step-desc">공고문의 실제 양식 목차를 추출합니다. 양식을 추측해서 쓰는 것이 가장 흔한 탈락 사유입니다. 공고문 파일을 올리거나 텍스트를 붙여넣으세요.</p>
-      <div class="card"><h3>공고문 파일 올리기</h3>
-        <div id="dropZone" class="drop-zone" data-act="pickFiles">
-          <div class="drop-icon">📄</div>
-          <div><b>파일을 끌어다 놓거나 클릭해서 선택</b></div>
-          <div class="hint">HWP · HWPX · PDF · DOCX · PPTX · TXT — 여러 개를 한 번에 올릴 수 있습니다</div>
-          <div class="hint">파일은 이 브라우저 안에서만 처리되며 어디로도 전송되지 않습니다.</div>
-        </div>
+      <h1 class="step-title">0. 공고문 · 양식 분석 <span class="hint" style="display:inline">(타겟 공고가 있으면 강력 추천)</span></h1>
+      <p class="step-desc">기관이 배포한 <b>사업계획서 양식</b>이 있으면 반드시 올려주세요. 양식을 추측해서 쓰는 것이 가장 흔한 탈락 사유입니다. 파일은 이 브라우저 안에서만 처리되며 어디로도 전송되지 않습니다.</p>
+
+      <div class="card">
+        <h3>① 사업계획서 양식 <span class="hint" style="display:inline">— 가장 중요합니다. 있으면 이것이 목차의 기준이 됩니다.</span></h3>
+        ${dropZoneHtml('form', '양식 파일을 끌어다 놓거나 클릭해서 선택')}
+        <input type="file" id="formFiles" multiple accept=".hwp,.hwpx,.pdf,.docx,.pptx,.txt,.md" style="display:none">
+        <div id="formParseStatus" class="hint"></div>
+        ${(fm.files || []).length ? `<div class="file-list">${fileRowsHtml(fm.files)}</div>` : ''}
+        <h3 style="margin-top:14px">양식 원문</h3>
+        <textarea id="formRaw" placeholder="양식 파일을 올리면 여기 텍스트가 쌓입니다. 직접 붙여넣어도 됩니다.">${esc2(fm.rawText || '')}</textarea>
+        <div class="btn-row">${(fm.rawText || '').trim() ? '<button class="btn secondary" data-act="clearRaw" data-target="form">비우기</button>' : ''}</div>
+        ${promptBlock('form', null, '양식 구조 분석 프롬프트 생성')}
+      </div>
+      <div class="card"><h3>양식 분석 결과 붙여넣기 (JSON)</h3>${pasteBlock('form')}${formResult}</div>
+
+      <div class="card">
+        <h3>② 공고문 <span class="hint" style="display:inline">— 배점·자격·마감·실격 조건을 뽑습니다.</span></h3>
+        ${dropZoneHtml('announcement', '공고문 파일을 끌어다 놓거나 클릭해서 선택')}
         <input type="file" id="annFiles" multiple accept=".hwp,.hwpx,.pdf,.docx,.pptx,.txt,.md" style="display:none">
         <div id="parseStatus" class="hint"></div>
-        ${fileRows ? `<div class="file-list">${fileRows}</div>` : ''}
-      </div>
-      <div class="card"><h3>공고문 원문 <span class="hint" style="display:inline">— 올린 파일의 텍스트가 여기 쌓입니다. 직접 붙여넣거나 수정해도 됩니다.</span></h3>
-        <textarea id="annRaw" placeholder="공고문 텍스트 전체를 붙여넣으세요 (요약표만 말고, 제출 양식 목차가 포함된 본문까지)">${esc2(a.rawText || '')}</textarea>
-        <div class="btn-row">
-          <button class="btn secondary" data-act="saveAnnRaw">원문 저장</button>
-          ${(a.rawText || '').trim() ? `<button class="btn secondary" data-act="clearAnnRaw">비우기</button>` : ''}
-        </div>
+        ${(a.files || []).length ? `<div class="file-list">${fileRowsHtml(a.files)}</div>` : ''}
+        <h3 style="margin-top:14px">공고문 원문</h3>
+        <textarea id="annRaw" placeholder="공고문 텍스트 전체를 붙여넣으세요">${esc2(a.rawText || '')}</textarea>
+        <div class="btn-row">${(a.rawText || '').trim() ? '<button class="btn secondary" data-act="clearRaw" data-target="announcement">비우기</button>' : ''}</div>
         ${promptBlock('announce', null, '공고 분석 프롬프트 생성')}
       </div>
-      <div class="card"><h3>Claude 응답 (JSON)</h3>${pasteBlock('announce')}</div>
-      ${result}
+      <div class="card"><h3>공고 분석 결과 붙여넣기 (JSON)</h3>${pasteBlock('announce')}${annResult}</div>
+
       <div class="btn-row">
         <button class="btn secondary" data-act="goStep" data-step="setup">← 이전</button>
         <button class="btn big" data-act="goStep" data-step="idea">다음: 아이템 발굴 →</button>
@@ -22992,18 +23147,33 @@ if (typeof module !== 'undefined') {
     if (!ui.activeSectionId || !secs.find((s) => s.id === ui.activeSectionId)) ui.activeSectionId = secs[0] && secs[0].id;
     const doneCount = secs.filter((s) => p.sections[s.id] && p.sections[s.id].content).length;
     const list = secs.map((s) => {
-      const done = p.sections[s.id] && p.sections[s.id].content;
+      const content = (p.sections[s.id] || {}).content || '';
+      const done = !!content;
+      const chars = content.replace(/\s/g, '').length ? content.length : 0;
+      const short = s.minChars && chars && chars < s.minChars;
+      const over = s.maxChars && chars > s.maxChars;
+      const meta = [s.score ? '배점 ' + s.score : '', limitText(s)].filter(Boolean).join(' · ');
       return `<div class="section-item ${ui.activeSectionId === s.id ? 'active' : ''}" data-act="pickSection" data-sec="${s.id}">
-        <span class="status ${done ? 'done' : 'todo'}">${done ? '완료' : '미작성'}</span>
+        <span class="status ${done ? (short || over ? 'warn' : 'done') : 'todo'}">${done ? (short ? '분량 부족' : over ? '분량 초과' : '완료') : '미작성'}</span>
         <span>${esc2(s.title)}</span>
-        <span class="meta">${s.score ? '배점 ' + s.score : ''} · ${s.pages}p</span>
+        <span class="meta">${esc2(meta || s.pages + 'p')}${done ? ' · ' + chars.toLocaleString() + '자' : ''}</span>
       </div>`;
     }).join('');
     const active = secs.find((s) => s.id === ui.activeSectionId);
     const cont = active && p.sections[active.id] && p.sections[active.id].content;
+    const activeChars = cont ? cont.length : 0;
+    const limitInfo = active ? limitText(active) : '';
+    const charNote = active && (active.minChars || active.maxChars) && cont
+      ? `<span class="${(active.minChars && activeChars < active.minChars) || (active.maxChars && activeChars > active.maxChars) ? 'warn-inline' : 'ok-inline'}">현재 ${activeChars.toLocaleString()}자</span>`
+      : (cont ? `<span class="hint" style="display:inline">현재 ${activeChars.toLocaleString()}자</span>` : '');
+    const tableReq = active && (active.tables || []).length
+      ? `<p class="hint">📋 양식이 요구하는 표: ${(active.tables || []).map((t) => esc2(t.caption || '표') + ((t.columns || []).length ? ' (' + t.columns.map(esc2).join(' | ') + ')' : '')).join(' · ')}</p>`
+      : '';
     const activePanel = active ? `
       <div class="card"><h3>✍ ${esc2(active.title)}</h3>
-        <p class="hint">${esc2(active.guide)} (권장 약 ${active.pages}p)</p>
+        ${active.source === 'form' ? '<div class="alert info" style="margin-top:0"><b>양식에 적힌 작성 안내문</b><br>' + esc2(active.guide || '(안내문 없음)').replace(/\n/g, '<br>') + '</div>' : `<p class="hint">${esc2(active.guide)}</p>`}
+        <p class="hint">${esc2(limitInfo || '권장 약 ' + active.pages + '페이지')} ${charNote}</p>
+        ${tableReq}
         ${promptBlock('sec_' + active.id, null, '이 섹션 작성 프롬프트 생성')}
         <h3 style="margin-top:16px">Claude 응답 (개조식 본문)</h3>
         ${pasteBlock('sec_' + active.id, '섹션 본문을 붙여넣으세요 (□/○/- 개조식, 표는 마크다운)')}
@@ -23122,6 +23292,12 @@ if (typeof module !== 'undefined') {
 
   function buildPrompt(key) {
     const p = cur();
+    if (key === 'form') {
+      const raw = document.getElementById('formRaw');
+      if (raw) { p.form.rawText = raw.value; save(); }
+      if (!(p.form.rawText || '').trim()) { toast('양식 원문을 먼저 올리거나 붙여넣어 주세요.', 'warn'); return null; }
+      return buildFormPrompt(p);
+    }
     if (key === 'announce') {
       const raw = document.getElementById('annRaw');
       if (raw) { p.announcement.rawText = raw.value; save(); }
@@ -23195,7 +23371,13 @@ if (typeof module !== 'undefined') {
     // 프롬프트를 그대로 되붙이면 자리표시자가 저장되므로 먼저 막는다
     if (looksLikePrompt(text)) { explainJsonFailure(text); return; }
 
-    if (key === 'announce') {
+    if (key === 'form') {
+      const json = extractJson(text, (v) => v && !Array.isArray(v) && Array.isArray(v.sections) && v.sections.length);
+      if (!json || !Array.isArray(json.sections) || !json.sections.length) { explainJsonFailure(text, 'sections'); return; }
+      p.form.analysis = json;
+      ui.activeSectionId = null;   // 목차가 바뀌므로 선택을 초기화한다
+      toast(`양식 항목 ${json.sections.length}개를 인식했습니다. 4단계 작성 목차가 이 양식으로 바뀝니다.`, 'ok', 7000);
+    } else if (key === 'announce') {
       const json = extractJson(text, (v) => v && !Array.isArray(v) && (v.sections || v.title || v.agency));
       if (!json || Array.isArray(json)) { explainJsonFailure(text, 'sections'); return; }
       p.announcement.analysis = json;
@@ -23286,18 +23468,21 @@ if (typeof module !== 'undefined') {
         if (ta) { p.announcement.rawText = ta.value; save(); flash(el, '저장됨 ✓'); }
         break;
       }
-      case 'clearAnnRaw':
-        confirmDialog('공고문 원문과 파일 목록을 모두 비웁니다.', { title: '공고문 비우기', okText: '비우기', danger: true })
-          .then((ok) => {
-            if (!ok) return;
-            p.announcement.rawText = '';
-            p.announcement.files = [];
-            save(); render();
-            toast('공고문을 비웠습니다.', 'ok');
-          });
+      case 'clearRaw': {
+        const slot = el.getAttribute('data-target') === 'form' ? 'form' : 'announcement';
+        const label = slot === 'form' ? '양식' : '공고문';
+        confirmDialog(`${label} 원문과 파일 목록, 분석 결과를 모두 비웁니다.`,
+          { title: label + ' 비우기', okText: '비우기', danger: true }).then((ok) => {
+          if (!ok) return;
+          p[slot] = { rawText: '', analysis: null, files: [] };
+          ui.activeSectionId = null;
+          save(); render();
+          toast(label + '을 비웠습니다.', 'ok');
+        });
         break;
+      }
       case 'pickFiles': {
-        const input = document.getElementById('annFiles');
+        const input = document.getElementById(el.getAttribute('data-target') === 'form' ? 'formFiles' : 'annFiles');
         if (input) input.click();
         break;
       }
@@ -23350,19 +23535,22 @@ if (typeof module !== 'undefined') {
 
   let parsing = false;
 
-  /** 올린 파일들의 텍스트를 뽑아 공고문 원문에 이어 붙인다 */
-  async function handleAnnouncementFiles(fileList) {
+  /** 올린 파일들의 텍스트를 뽑아 해당 원문 칸에 이어 붙인다 (target: announcement | form) */
+  async function handleUploadedFiles(fileList, target) {
     const files = Array.from(fileList || []);
     if (!files.length || parsing) return;
     const p = cur();
-    if (!p.announcement.files) p.announcement.files = [];
+    const slot = target === 'form' ? 'form' : 'announcement';
+    if (!p[slot]) p[slot] = { rawText: '', analysis: null, files: [] };
+    if (!p[slot].files) p[slot].files = [];
+    const taId = slot === 'form' ? 'formRaw' : 'annRaw';
 
     // 사용자가 직접 입력 중이던 내용을 잃지 않도록 먼저 반영한다
-    const ta = document.getElementById('annRaw');
-    if (ta) p.announcement.rawText = ta.value;
+    const ta = document.getElementById(taId);
+    if (ta) p[slot].rawText = ta.value;
 
     parsing = true;
-    const status = document.getElementById('parseStatus');
+    const status = document.getElementById(slot === 'form' ? 'formParseStatus' : 'parseStatus');
     const setStatus = (msg) => { if (status) status.textContent = msg; };
 
     for (let i = 0; i < files.length; i++) {
@@ -23379,24 +23567,38 @@ if (typeof module !== 'undefined') {
         result = { name: f.name, kind: '?', text: '', error: e.message || String(e) };
       }
 
-      p.announcement.files.push({
+      // 같은 파일을 다시 올리면 덧붙이지 않고 갈아끼운다
+      const dupe = p[slot].files.findIndex((x) => x.name === result.name);
+      const entry = {
         name: result.name, kind: result.kind, chars: result.text.length,
         warning: result.warning || null, error: result.error || null
-      });
+      };
+      const header = `──────── ${result.name} (${result.kind}) ────────`;
+      if (dupe >= 0) {
+        p[slot].files[dupe] = entry;
+        // 이전에 넣은 같은 파일의 본문을 잘라내고 새 것으로 바꾼다
+        const start = p[slot].rawText.indexOf(header);
+        if (start >= 0) {
+          const nextIdx = p[slot].rawText.indexOf('\n────────', start + header.length);
+          const end = nextIdx >= 0 ? nextIdx : p[slot].rawText.length;
+          p[slot].rawText = (p[slot].rawText.slice(0, start) + p[slot].rawText.slice(end)).trim();
+        }
+      } else {
+        p[slot].files.push(entry);
+      }
 
       if (result.text) {
-        const header = `──────── ${result.name} (${result.kind}) ────────`;
-        p.announcement.rawText = (p.announcement.rawText ? p.announcement.rawText.trimEnd() + '\n\n' : '') +
+        p[slot].rawText = (p[slot].rawText ? p[slot].rawText.trimEnd() + '\n\n' : '') +
           header + '\n' + result.text;
       }
       save();
     }
 
     parsing = false;
-    const ok = p.announcement.files.filter((x) => !x.error).length;
+    const ok = p[slot].files.filter((x) => !x.error).length;
     setStatus('');
     render();
-    const failed = p.announcement.files.filter((x) => x.error);
+    const failed = p[slot].files.filter((x) => x.error);
     if (failed.length && ok === 0) {
       dialog({
         title: '파일에서 텍스트를 읽지 못했습니다',
@@ -23457,6 +23659,7 @@ if (typeof module !== 'undefined') {
         cur().company[t.getAttribute('data-company')] = t.value; save();
       }
       if (t.id === 'annRaw') { cur().announcement.rawText = t.value; save(); }
+      if (t.id === 'formRaw') { cur().form.rawText = t.value; save(); }
       if (t.id === 'reframeBiz') { cur().reframeBiz = t.value; save(); }
     });
 
@@ -23493,30 +23696,30 @@ if (typeof module !== 'undefined') {
 
     // 공고문 파일: 선택 및 끌어다 놓기
     document.body.addEventListener('change', (e) => {
-      if (e.target.id === 'annFiles') {
-        handleAnnouncementFiles(e.target.files);
+      if (e.target.id === 'annFiles' || e.target.id === 'formFiles') {
+        handleUploadedFiles(e.target.files, e.target.id === 'formFiles' ? 'form' : 'announcement');
         e.target.value = '';
       }
     });
 
     document.body.addEventListener('dragover', (e) => {
-      const zone = e.target.closest && e.target.closest('#dropZone');
+      const zone = e.target.closest && e.target.closest('.drop-zone');
       if (!zone) return;
       e.preventDefault();
       zone.classList.add('over');
     });
 
     document.body.addEventListener('dragleave', (e) => {
-      const zone = e.target.closest && e.target.closest('#dropZone');
+      const zone = e.target.closest && e.target.closest('.drop-zone');
       if (zone) zone.classList.remove('over');
     });
 
     document.body.addEventListener('drop', (e) => {
-      const zone = e.target.closest && e.target.closest('#dropZone');
+      const zone = e.target.closest && e.target.closest('.drop-zone');
       if (!zone) return;
       e.preventDefault();
       zone.classList.remove('over');
-      handleAnnouncementFiles(e.dataTransfer.files);
+      handleUploadedFiles(e.dataTransfer.files, zone.getAttribute('data-target') || 'announcement');
     });
 
     document.body.addEventListener('change', (e) => {
