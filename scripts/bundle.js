@@ -24,6 +24,11 @@ function sanitize(js) {
 const scripts = [
   'js/vendor/docx.iife.js',
   'js/vendor/pptxgen.bundle.js',
+  // pdf.js: 워커 스크립트를 함께 넣으면 blob·eval 없이 메인 스레드에서 동작한다 (CSP 안전)
+  'js/vendor/pdf.worker.min.js',
+  'js/vendor/pdf.min.js',
+  'js/vendor/cmaps-ko.js',
+  'js/fileparse.js',
   'js/programs.js',
   'js/prompts.js',
   'js/export.js',

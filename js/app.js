@@ -170,12 +170,35 @@
           ${(an.sections || []).length ? '<div class="alert ok">이 목차가 4단계 사업계획서 작성의 목차로 자동 적용됩니다 (공고 양식 우선 원칙).</div>' : ''}
         </div>`;
     }
+    const fileRows = (a.files || []).map((f) => `
+      <div class="file-row ${f.error ? 'bad' : ''}">
+        <span class="file-kind">${esc2(f.kind || '?')}</span>
+        <span class="file-name">${esc2(f.name)}</span>
+        ${f.error
+          ? `<span class="file-msg bad">${esc2(f.error)}</span>`
+          : `<span class="file-msg">${f.chars.toLocaleString()}자 추출${f.warning ? ' · ⚠ ' + esc2(f.warning) : ''}</span>`}
+      </div>`).join('');
+
     return `
       <h1 class="step-title">0. 공고문 분석 <span class="hint" style="display:inline">(선택 단계 — 타겟 공고가 있으면 강력 추천)</span></h1>
-      <p class="step-desc">공고문의 실제 양식 목차를 추출합니다. 양식을 추측해서 쓰는 것이 가장 흔한 탈락 사유입니다. 공고문(HWP/PDF)의 텍스트를 전체 복사해 붙여넣으세요.</p>
-      <div class="card"><h3>공고문 원문 붙여넣기</h3>
+      <p class="step-desc">공고문의 실제 양식 목차를 추출합니다. 양식을 추측해서 쓰는 것이 가장 흔한 탈락 사유입니다. 공고문 파일을 올리거나 텍스트를 붙여넣으세요.</p>
+      <div class="card"><h3>공고문 파일 올리기</h3>
+        <div id="dropZone" class="drop-zone" data-act="pickFiles">
+          <div class="drop-icon">📄</div>
+          <div><b>파일을 끌어다 놓거나 클릭해서 선택</b></div>
+          <div class="hint">HWP · HWPX · PDF · DOCX · PPTX · TXT — 여러 개를 한 번에 올릴 수 있습니다</div>
+          <div class="hint">파일은 이 브라우저 안에서만 처리되며 어디로도 전송되지 않습니다.</div>
+        </div>
+        <input type="file" id="annFiles" multiple accept=".hwp,.hwpx,.pdf,.docx,.pptx,.txt,.md" style="display:none">
+        <div id="parseStatus" class="hint"></div>
+        ${fileRows ? `<div class="file-list">${fileRows}</div>` : ''}
+      </div>
+      <div class="card"><h3>공고문 원문 <span class="hint" style="display:inline">— 올린 파일의 텍스트가 여기 쌓입니다. 직접 붙여넣거나 수정해도 됩니다.</span></h3>
         <textarea id="annRaw" placeholder="공고문 텍스트 전체를 붙여넣으세요 (요약표만 말고, 제출 양식 목차가 포함된 본문까지)">${esc2(a.rawText || '')}</textarea>
-        <div class="btn-row"><button class="btn secondary" data-act="saveAnnRaw">원문 저장</button></div>
+        <div class="btn-row">
+          <button class="btn secondary" data-act="saveAnnRaw">원문 저장</button>
+          ${(a.rawText || '').trim() ? `<button class="btn secondary" data-act="clearAnnRaw">비우기</button>` : ''}
+        </div>
         ${promptBlock('announce', null, '공고 분석 프롬프트 생성')}
       </div>
       <div class="card"><h3>Claude 응답 (JSON)</h3>${pasteBlock('announce')}</div>
@@ -536,6 +559,18 @@
         if (ta) { p.announcement.rawText = ta.value; save(); flash(el, '저장됨 ✓'); }
         break;
       }
+      case 'clearAnnRaw':
+        if (confirm('공고문 원문과 파일 목록을 비울까요?')) {
+          p.announcement.rawText = '';
+          p.announcement.files = [];
+          save(); render();
+        }
+        break;
+      case 'pickFiles': {
+        const input = document.getElementById('annFiles');
+        if (input) input.click();
+        break;
+      }
       case 'exportDocx': exportDocx(p).catch((e) => alert('DOCX 생성 실패: ' + e.message)); break;
       case 'exportPdf': exportPdf(p); break;
       case 'exportPptx': exportPptx(p); break;
@@ -556,6 +591,63 @@
         else box.style.display = 'none';
         break;
       }
+    }
+  }
+
+  /* ───────── 공고문 파일 처리 ───────── */
+
+  let parsing = false;
+
+  /** 올린 파일들의 텍스트를 뽑아 공고문 원문에 이어 붙인다 */
+  async function handleAnnouncementFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length || parsing) return;
+    const p = cur();
+    if (!p.announcement.files) p.announcement.files = [];
+
+    // 사용자가 직접 입력 중이던 내용을 잃지 않도록 먼저 반영한다
+    const ta = document.getElementById('annRaw');
+    if (ta) p.announcement.rawText = ta.value;
+
+    parsing = true;
+    const status = document.getElementById('parseStatus');
+    const setStatus = (msg) => { if (status) status.textContent = msg; };
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const prefix = files.length > 1 ? `(${i + 1}/${files.length}) ` : '';
+      setStatus(`${prefix}${f.name} 읽는 중…`);
+
+      let result;
+      try {
+        result = await extractText(f, (page, total) => {
+          setStatus(`${prefix}${f.name} 읽는 중… ${page}/${total}쪽`);
+        });
+      } catch (e) {
+        result = { name: f.name, kind: '?', text: '', error: e.message || String(e) };
+      }
+
+      p.announcement.files.push({
+        name: result.name, kind: result.kind, chars: result.text.length,
+        warning: result.warning || null, error: result.error || null
+      });
+
+      if (result.text) {
+        const header = `──────── ${result.name} (${result.kind}) ────────`;
+        p.announcement.rawText = (p.announcement.rawText ? p.announcement.rawText.trimEnd() + '\n\n' : '') +
+          header + '\n' + result.text;
+      }
+      save();
+    }
+
+    parsing = false;
+    const ok = p.announcement.files.filter((x) => !x.error).length;
+    setStatus('');
+    render();
+    const failed = p.announcement.files.filter((x) => x.error);
+    if (failed.length && ok === 0) {
+      alert('파일에서 텍스트를 읽지 못했습니다.\n\n' + failed.map((f) => `· ${f.name}: ${f.error}`).join('\n') +
+        '\n\n한글에서 파일을 열어 "다른 이름으로 저장"으로 다시 저장하거나, 텍스트를 직접 복사해 붙여넣어 주세요.');
     }
   }
 
@@ -630,6 +722,34 @@
       if (!state.currentId) newProject('내 첫 프로젝트');
       ui.step = 'setup'; ui.prompts = {};
       save(); render();
+    });
+
+    // 공고문 파일: 선택 및 끌어다 놓기
+    document.body.addEventListener('change', (e) => {
+      if (e.target.id === 'annFiles') {
+        handleAnnouncementFiles(e.target.files);
+        e.target.value = '';
+      }
+    });
+
+    document.body.addEventListener('dragover', (e) => {
+      const zone = e.target.closest && e.target.closest('#dropZone');
+      if (!zone) return;
+      e.preventDefault();
+      zone.classList.add('over');
+    });
+
+    document.body.addEventListener('dragleave', (e) => {
+      const zone = e.target.closest && e.target.closest('#dropZone');
+      if (zone) zone.classList.remove('over');
+    });
+
+    document.body.addEventListener('drop', (e) => {
+      const zone = e.target.closest && e.target.closest('#dropZone');
+      if (!zone) return;
+      e.preventDefault();
+      zone.classList.remove('over');
+      handleAnnouncementFiles(e.dataTransfer.files);
     });
 
     document.body.addEventListener('change', (e) => {
