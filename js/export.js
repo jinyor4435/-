@@ -296,6 +296,20 @@ function exportPptx(project) {
   return true;
 }
 
+/* ─────────────── 한글 문서 (HWPX) ─────────────── */
+
+/** 한컴오피스 한글이 바로 여는 개방형 표준 포맷(.hwpx)으로 내려받는다 */
+function exportHwpx(project) {
+  const idea = (project.ideas || [])[project.selectedIdeaIndex] || {};
+  const title = idea.title || project.name || '사업계획서';
+  const bytes = buildHwpxBytes(project, {
+    parseContent,
+    sections: getSections(project),
+    appendix: project.poc ? { title: '붙임. PoC 검증 계획', content: pocToMarkdown(project.poc) } : null
+  });
+  downloadBlob(new Blob([bytes], { type: 'application/hwp+zip' }), sanitizeFilename(title) + '_사업계획서.hwpx');
+}
+
 /* ─────────────── HWP 호환 ─────────────── */
 
 async function copyHwpHtml(project) {

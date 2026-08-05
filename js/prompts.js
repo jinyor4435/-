@@ -3,8 +3,14 @@
  * 결과를 앱에 되붙이면 파싱해 저장한다. (JSON 단계는 ```json 코드블록 하나만 출력하도록 강제)
  */
 
-/** 모든 프롬프트에 공통으로 들어가는 심사위원 페르소나 */
-function evaluatorPersona() {
+/**
+ * 심사위원 페르소나.
+ * 단계마다 같은 목록을 통째로 반복하면 붙여넣을 분량만 늘어난다.
+ * 채점 기준이 실제로 필요한 단계(섹션 작성·모의심사)에서만 전체 목록을 넣고,
+ * 나머지는 핵심만 간추린 짧은 버전을 쓴다.
+ */
+function evaluatorPersona(full) {
+  if (!full) return briefPersona();
   return [
     '당신은 정부지원사업 심사위원 경력 15년의 전문가다. 창업진흥원 창업패키지, 중기부 TIPS/R&D 과제,',
     '지자체 공모사업을 수백 건 심사했고, 어떤 계획서가 붙고 어떤 계획서가 떨어지는지 정확히 안다.',
@@ -20,6 +26,21 @@ function evaluatorPersona() {
     '- 문장은 짧게 끊고, 수치에는 근거를 괄호 병기한다. 예: "국내 시장 6.1조 원(KB금융, 2025)"',
     '- 확인된 사실과 가정치를 구분한다. 사용자가 제공하지 않은 사실(설립일, 매출, 특허번호 등)은',
     '  지어내지 말고 【확인】 마커로 남긴다. 가정치에는 "(가정치, 실측 후 재검증)"을 명시한다.'
+  ].join('\n');
+}
+
+/** 간결 페르소나 — 감점 요인은 가장 자주 걸리는 것만 추린다 */
+function briefPersona() {
+  return [
+    '당신은 정부지원사업 심사위원 경력 15년의 전문가다. 어떤 계획서가 붙고 떨어지는지 정확히 안다.',
+    '',
+    '반드시 지킬 것:',
+    '- 지불 주체 기반 bottom-up 추정만 쓴다 (인구 × 침투율 같은 top-down 금지). 전환율은 보수적으로.',
+    '- 비용 절감(As-Is → To-Be 수치 대비)을 먼저, 매출 증대를 그 위에 얹는다.',
+    '- 성능 지표에는 측정 방법과 숫자 임계값을 반드시 붙인다.',
+    '- 사용자가 주지 않은 사실(설립일·매출·특허번호)은 지어내지 말고 【확인】 마커로 남기고,',
+    '  추정치에는 "(가정치)"를 명시한다.',
+    '- 개조식(□ / ○ / -)으로 쓰고, 수치에는 출처를 괄호 병기한다.'
   ].join('\n');
 }
 
@@ -331,16 +352,19 @@ function pocContext(project) {
 
 function buildSectionPrompt(project, section) {
   const program = PROGRAMS[project.programType] || PROGRAMS.package;
+  // 이미 쓴 섹션은 수치 일관성 확인용이므로, 전문 대신 앞부분만 짧게 넣는다
   const done = Object.entries(project.sections || {})
     .filter(([id, s]) => s && s.content && id !== section.id)
+    .slice(-4)
     .map(([id, s]) => {
       const sec = getSections(project).find((x) => x.id === id);
-      return sec ? `※ 이미 작성된 "${sec.title}" 요지:\n${s.content.slice(0, 600)}` : '';
+      const gist = s.content.split('\n').filter((l) => l.trim()).slice(0, 6).join('\n');
+      return sec ? `※ 이미 작성된 "${sec.title}" 요지:\n${gist}` : '';
     })
     .filter(Boolean);
 
   return [
-    evaluatorPersona(),
+    evaluatorPersona(true),
     '',
     `"${program.name}" 사업계획서의 다음 섹션을 작성한다.`,
     `- 섹션: ${section.title}`,
@@ -377,7 +401,7 @@ function buildReviewPrompt(project) {
     .join('\n\n');
 
   return [
-    evaluatorPersona(),
+    evaluatorPersona(true),
     '',
     `당신은 지금 "${program.name}" 심사장에 앉아 있다. 아래 사업계획서를 실제 심사하듯 평가하라.`,
     '수십 부를 훑는 심사위원의 속도로 읽고, 동정 없이 냉정하게 채점하라. 후한 점수는 지원자를 돕는 게 아니다.',
@@ -419,7 +443,8 @@ function buildDeckPrompt(project) {
       .filter(([, s]) => s && s.content)
       .map(([id, s]) => {
         const sec = getSections(project).find((x) => x.id === id);
-        return (sec ? '## ' + sec.title + '\n' : '') + s.content.slice(0, 800);
+        const gist = s.content.split('\n').filter((l) => l.trim()).slice(0, 8).join('\n');
+        return (sec ? '## ' + sec.title + '\n' : '') + gist;
       })
       .join('\n\n'),
     '',
@@ -458,33 +483,90 @@ function getSections(project) {
   return program.sections;
 }
 
-/** 붙여넣은 텍스트에서 첫 JSON 블록 추출 (```json 펜스 우선, 없으면 중괄호/대괄호 스캔) */
-function extractJson(text) {
-  if (!text) return null;
-  const fence = text.match(/```(?:json)?\s*\n([\s\S]*?)```/);
-  const candidates = [];
-  if (fence) candidates.push(fence[1]);
-  const firstBrace = Math.min(...['{', '['].map((c) => {
-    const i = text.indexOf(c);
-    return i === -1 ? Infinity : i;
-  }));
-  if (firstBrace !== Infinity) candidates.push(text.slice(firstBrace));
-  for (const cand of candidates) {
-    // 끝에서부터 잘라가며 파싱 시도 (뒤에 딸린 설명 텍스트 허용)
-    for (let end = cand.length; end > 0; end--) {
-      const ch = cand[end - 1];
-      if (ch !== '}' && ch !== ']') continue;
-      try {
-        return JSON.parse(cand.slice(0, end));
-      } catch (e) { /* keep shrinking */ }
+/** 흔한 LLM 출력 오류를 고쳐 다시 파싱을 시도한다 (마지막 수단) */
+function repairJson(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')          // 블록 주석
+    .replace(/(^|[^:"'\\])\/\/[^\n]*/g, '$1')  // 줄 주석 (URL 은 건드리지 않는다)
+    .replace(/,(\s*[}\]])/g, '$1');            // 닫기 직전의 쉼표
+}
+
+/** 문자열·이스케이프를 인식하며 균형 잡힌 JSON 덩어리들을 찾아낸다 */
+function findJsonChunks(text) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i++) {
+    const open = text[i];
+    if (open !== '{' && open !== '[') continue;
+    const close = open === '{' ? '}' : ']';
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < text.length; j++) {
+      const c = text[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') { inStr = true; continue; }
+      if (c === open) depth++;
+      else if (c === close) {
+        depth--;
+        if (depth === 0) { chunks.push(text.slice(i, j + 1)); i = j; break; }
+      }
     }
   }
-  return null;
+  return chunks;
+}
+
+/**
+ * 붙여넣은 텍스트에서 JSON을 뽑아낸다.
+ * 코드블록·앞뒤 설명·여러 덩어리가 섞여 있어도 찾아내며, validate 를 주면 조건에 맞는 것을 고른다.
+ */
+function extractJson(text, validate) {
+  if (!text) return null;
+
+  // 코드블록 안을 먼저 보고, 그다음 전체 텍스트를 훑는다
+  const sources = [];
+  const fenceRe = /```[a-zA-Z]*\s*\n([\s\S]*?)```/g;
+  let f;
+  while ((f = fenceRe.exec(text))) sources.push(f[1]);
+  sources.push(text);
+
+  const parsed = [];
+  for (const src of sources) {
+    for (const chunk of findJsonChunks(src)) {
+      let value = null;
+      try { value = JSON.parse(chunk); }
+      catch (e) {
+        try { value = JSON.parse(repairJson(chunk)); } catch (e2) { continue; }
+      }
+      if (value && typeof value === 'object') {
+        if (validate && validate(value)) return value;
+        parsed.push(value);
+      }
+    }
+    if (!validate && parsed.length) return parsed[0];
+  }
+  // 조건에 맞는 게 없으면, 찾은 것 중 가장 큰 덩어리를 돌려준다 (호출 측에서 사유를 설명한다)
+  if (!parsed.length) return null;
+  return parsed.sort((a, b) => JSON.stringify(b).length - JSON.stringify(a).length)[0];
+}
+
+/** 붙여넣은 내용이 응답이 아니라 프롬프트 자체인지 알아본다 */
+function looksLikePrompt(text) {
+  const marks = [
+    '당신은 정부지원사업 심사위원',
+    '반드시 아래 스키마',
+    '```json 코드블록으로 출력하라',
+    '작성 원칙 (심사위원이 실제로 감점하는 지점들)'
+  ];
+  return marks.some((m) => text.includes(m));
 }
 
 if (typeof module !== 'undefined') {
   module.exports = {
     evaluatorPersona, buildAnnouncementPrompt, buildIdeaPrompt, buildReframePrompt, buildPlanningPrompt,
-    buildPocPrompt, pocToMarkdown, buildSectionPrompt, buildReviewPrompt, buildDeckPrompt, getSections, extractJson
+    buildPocPrompt, pocToMarkdown, buildSectionPrompt, buildReviewPrompt, buildDeckPrompt, getSections,
+    extractJson, findJsonChunks, repairJson, looksLikePrompt
   };
 }

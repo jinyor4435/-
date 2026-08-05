@@ -203,6 +203,26 @@ textarea:focus, input:focus { outline: 2px solid #bcd2f5; border-color: var(--ac
   .toast.leaving { transition: none; }
 }
 
+/* ── 전체 미리보기 ── */
+.preview-back { padding: 0; }
+.preview-shell {
+  background: var(--bg); width: min(1000px, 100%); height: 100%;
+  display: flex; flex-direction: column;
+}
+.preview-bar {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  background: #fff; border-bottom: 1px solid var(--line); padding: 10px 16px;
+}
+.preview-bar .hint { margin: 0; }
+.preview-page {
+  flex: 1; overflow-y: auto; background: #fff; margin: 16px;
+  padding: 28px 34px; border-radius: 8px; border: 1px solid var(--line);
+  box-shadow: 0 2px 12px rgba(20, 34, 60, .08); max-height: none;
+}
+@media (max-width: 700px) {
+  .preview-page { margin: 8px; padding: 18px; }
+}
+
 .drop-zone {
   border: 2px dashed var(--line); border-radius: 10px; background: #fbfcfe;
   padding: 22px 16px; text-align: center; cursor: pointer;

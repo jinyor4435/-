@@ -168,6 +168,38 @@
     });
   }
 
+  /** 제출본 형태의 전체 미리보기 — 크게 보고 그 자리에서 인쇄까지 */
+  function openPreview(project) {
+    const secs = getSections(project);
+    const written = secs.filter((s) => (project.sections || {})[s.id] && project.sections[s.id].content).length;
+    if (!written) { toast('아직 작성된 섹션이 없습니다. 4단계에서 먼저 작성해 주세요.', 'warn'); return; }
+
+    const back = document.createElement('div');
+    back.className = 'modal-back preview-back';
+    back.innerHTML = `
+      <div class="preview-shell" role="dialog" aria-modal="true" aria-label="사업계획서 미리보기">
+        <div class="preview-bar">
+          <b>사업계획서 미리보기</b>
+          <span class="hint">${written}/${secs.length} 섹션${project.poc ? ' · PoC 붙임 포함' : ''}</span>
+          <span style="flex:1"></span>
+          <button class="btn secondary small" data-role="print">🖨 인쇄 · PDF</button>
+          <button class="btn secondary small" data-role="close">닫기</button>
+        </div>
+        <div class="preview-page preview">${buildPlanHtml(project)}</div>
+      </div>`;
+    document.body.appendChild(back);
+
+    const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    back.querySelector('[data-role="close"]').addEventListener('click', close);
+    back.querySelector('[data-role="print"]').addEventListener('click', () => {
+      const how = exportPdf(project);
+      if (how === false) toast('이 환경에서는 인쇄가 막혀 있습니다. DOCX나 한글 파일을 내려받아 저장해 주세요.', 'error');
+    });
+    back.addEventListener('click', (e) => { if (e.target === back) close(); });
+    document.addEventListener('keydown', onKey);
+  }
+
   const confirmDialog = (message, opts) => dialog(Object.assign({ title: '확인', message }, opts || {}));
   const promptDialog = (message, value, opts) => dialog(Object.assign({ title: message, input: value || '' }, opts || {}));
 
@@ -199,12 +231,16 @@
         ${val ? `<button class="btn secondary" data-act="copyPrompt" data-key="${key}">📋 복사</button>` : ''}
       </div>
       ${val ? `<textarea class="prompt-out" id="prompt_${key}" readonly>${esc2(val)}</textarea>
-      <p class="hint">위 프롬프트를 복사해 Claude(claude.ai 등)에 붙여넣고, 응답 전체를 아래에 붙여넣으세요.</p>` : ''}`;
+      <ol class="howto">
+        <li>위 <b>복사</b> 버튼을 누릅니다.</li>
+        <li><b>Claude(claude.ai)</b> 대화창에 붙여넣고 답변을 받습니다.</li>
+        <li>Claude가 준 <b>답변</b>을 아래 칸에 붙여넣습니다. <span class="warn-inline">이 프롬프트를 그대로 붙여넣으면 안 됩니다.</span></li>
+      </ol>` : ''}`;
   }
 
   function pasteBlock(key, placeholder) {
     return `
-      <textarea id="paste_${key}" placeholder="${esc2(placeholder || 'Claude 응답을 여기에 붙여넣기')}"></textarea>
+      <textarea id="paste_${key}" placeholder="${esc2(placeholder || 'Claude가 준 답변을 여기에 붙여넣으세요 (위 프롬프트가 아니라, Claude의 응답입니다)')}"></textarea>
       <div class="btn-row"><button class="btn" data-act="savePaste" data-key="${key}">💾 응답 저장 · 파싱</button></div>`;
   }
 
@@ -423,6 +459,7 @@
       ${doneCount === secs.length && secs.length ? '<div class="alert ok">전 섹션 작성 완료. 5단계 모의심사로 검증하세요.</div>' : ''}
       <div class="btn-row">
         <button class="btn secondary" data-act="goStep" data-step="poc">← 이전</button>
+        ${doneCount ? '<button class="btn secondary" data-act="openPreview">👀 사업계획서 미리보기</button>' : ''}
         <button class="btn big" data-act="goStep" data-step="review">다음: 모의심사 →</button>
       </div>`;
   }
@@ -469,14 +506,21 @@
     return `
       <h1 class="step-title">내보내기</h1>
       <p class="step-desc">사업계획서 ${doneCount}/${secs.length} 섹션 작성됨${p.poc ? ' · PoC 검증 계획 포함(붙임 첨부)' : ''}${p.deck ? ' · IR Deck ' + (p.deck.slides || []).length + '장 준비됨' : ''}</p>
+      <div class="btn-row" style="margin-bottom:16px">
+        <button class="btn big" data-act="openPreview">👀 사업계획서 미리보기</button>
+        <button class="btn secondary" data-act="exportHwpx">🇰🇷 한글 파일(.hwpx) 다운로드</button>
+        <button class="btn secondary" data-act="exportDocx">📄 DOCX 다운로드</button>
+      </div>
       <div class="export-grid">
-        <div class="export-card"><h4>📄 DOCX (Word)</h4><p>맑은 고딕 · 개조식 · 표 포함. 제출 전 마지막 수정에 가장 편한 형식.</p>
+        <div class="export-card"><h4>🇰🇷 한글 파일 (.hwpx)</h4><p>한컴오피스 한글 2014 이상에서 바로 열립니다. 열어서 <b>다른 이름으로 저장 → .hwp</b>로 바꾸면 제출용 한글 파일이 됩니다.</p>
+          <button class="btn" data-act="exportHwpx">HWPX 다운로드</button></div>
+        <div class="export-card"><h4>📄 DOCX (Word)</h4><p>맑은 고딕 · 개조식 · 표 포함. 한글에서도 열립니다. 가장 확실한 형식입니다.</p>
           <button class="btn" data-act="exportDocx">DOCX 다운로드</button></div>
         <div class="export-card"><h4>📑 PDF</h4><p>인쇄 대화상자가 열립니다. "PDF로 저장"을 선택하세요. 여기서 실제 페이지 수도 확인하세요.</p>
           <button class="btn" data-act="exportPdf">PDF 만들기</button></div>
         <div class="export-card"><h4>📊 PPTX (IR Deck)</h4><p>표지 + 슬라이드 + 발표 대본(발표자 노트). 16:9 와이드.</p>
           <button class="btn" data-act="exportPptx">PPTX 다운로드</button></div>
-        <div class="export-card"><h4>🇰🇷 HWP 호환</h4><p>HWP는 비공개 포맷이라 직접 생성이 불가합니다. 두 가지 경로를 제공합니다.</p>
+        <div class="export-card"><h4>📋 한글에 붙여넣기</h4><p>파일을 받지 않고, 열려 있는 한글 문서에 서식 그대로 붙여넣습니다.</p>
           <div class="btn-row">
             <button class="btn secondary" data-act="copyHwp">서식 복사 (한글에 붙여넣기)</button>
             <button class="btn secondary" data-act="hwpGuide">DOCX→HWP 변환 안내</button>
@@ -487,10 +531,9 @@
             <button class="btn secondary" data-act="importJson">백업 불러오기</button>
             <input type="file" id="importFile" accept=".json" style="display:none">
           </div></div>
-        <div class="export-card"><h4>👀 전체 미리보기</h4><p>제출본 형태로 전체 문서를 확인합니다.</p>
-          <button class="btn secondary" data-act="togglePreview">미리보기 열기/닫기</button></div>
+        <div class="export-card"><h4>👀 전체 미리보기</h4><p>제출본 형태로 전체 문서를 크게 확인하고, 그 화면에서 바로 인쇄할 수 있습니다.</p>
+          <button class="btn secondary" data-act="openPreview">미리보기 열기</button></div>
       </div>
-      <div id="fullPreview" style="display:none; margin-top:16px" class="preview"></div>
       <div class="alert warn"><b>제출 전 체크리스트:</b> ① 실제 워드/한글에서 연 페이지 수가 제한 이내인지 (이 미리보기의 페이지 수는 근사치) ② 【확인】 마커가 모두 채워졌는지 ③ 요약-본문-Deck의 수치가 일치하는지 ④ 공고의 실격 조건(자격, 중복 수혜)에 걸리지 않는지</div>`;
   }
 
@@ -562,28 +605,58 @@
     return null;
   }
 
+  /** JSON을 못 찾았을 때, 무엇이 문제인지 짚어준다 */
+  function explainJsonFailure(text, needLabel) {
+    if (looksLikePrompt(text)) {
+      dialog({
+        title: '프롬프트를 그대로 붙여넣으신 것 같습니다',
+        message: '지금 붙여넣은 내용은 이 앱이 만들어 준 프롬프트입니다.\n\n' +
+          '1) 위 프롬프트를 복사해서\n' +
+          '2) Claude(claude.ai)에 붙여넣고\n' +
+          '3) Claude가 답으로 준 JSON 코드블록을 여기에 붙여넣어 주세요.',
+        okText: '알겠습니다', cancelText: '닫기'
+      });
+      return;
+    }
+    if (!/[{[]/.test(text)) {
+      toast('JSON이 보이지 않습니다. Claude 답변의 JSON 코드블록을 통째로 복사해 붙여넣어 주세요.', 'error');
+      return;
+    }
+    toast('JSON이 중간에서 잘린 것 같습니다. 맨 처음 여는 괄호부터 마지막 닫는 괄호까지 빠짐없이 복사해 주세요.' +
+      (needLabel ? ' (' + needLabel + ' 항목이 있어야 합니다)' : ''), 'error', 11000);
+  }
+
   function savePaste(key, text) {
     const p = cur();
     if (!text.trim()) { toast('붙여넣은 내용이 없습니다.', 'warn'); return; }
 
+    // 프롬프트를 그대로 되붙이면 자리표시자가 저장되므로 먼저 막는다
+    if (looksLikePrompt(text)) { explainJsonFailure(text); return; }
+
     if (key === 'announce') {
-      const json = extractJson(text);
-      if (!json || typeof json !== 'object' || Array.isArray(json)) { toast('JSON을 찾지 못했습니다. Claude 응답의 ```json 코드블록을 통째로 붙여넣어 주세요.', 'error'); return; }
+      const json = extractJson(text, (v) => v && !Array.isArray(v) && (v.sections || v.title || v.agency));
+      if (!json || Array.isArray(json)) { explainJsonFailure(text, 'sections'); return; }
       p.announcement.analysis = json;
       if (json.pageLimit && Number(json.pageLimit)) p.pageLimitOverride = Number(json.pageLimit);
     } else if (key === 'idea') {
-      const json = extractJson(text);
-      const arr = Array.isArray(json) ? json : (json && Array.isArray(json.ideas) ? json.ideas : null);
-      if (!arr || !arr.length) { toast('아이템 목록(JSON 배열)을 찾지 못했습니다. 응답 전체를 붙여넣었는지 확인해 주세요.', 'error'); return; }
+      const pickIdeas = (v) => (Array.isArray(v) ? v : (v && Array.isArray(v.ideas) ? v.ideas : null));
+      const json = extractJson(text, (v) => {
+        const a = pickIdeas(v);
+        return !!(a && a.length && a[0] && a[0].title);
+      });
+      const arr = pickIdeas(json);
+      if (!arr || !arr.length) { explainJsonFailure(text, 'title'); return; }
       p.ideas = arr;
       p.selectedIdeaIndex = -1;
     } else if (key === 'plan') {
       p.planning = { raw: text.trim() };
       if (!/\[P\d/.test(text)) toast('저장했습니다. 다만 [P1]~[P11] 태그가 없어 항목별로 정리되지 않습니다.', 'warn');
     } else if (key === 'poc') {
-      const json = extractJson(text);
-      if (!json || typeof json !== 'object' || Array.isArray(json) || !Array.isArray(json.metrics)) {
-        toast('PoC 설계(JSON)를 찾지 못했습니다. metrics 항목이 포함된 응답 전체를 붙여넣어 주세요.', 'error'); return;
+      const json = extractJson(text, (v) => v && !Array.isArray(v) && Array.isArray(v.metrics) && v.metrics.length);
+      if (!json || Array.isArray(json)) { explainJsonFailure(text, 'metrics'); return; }
+      if (!Array.isArray(json.metrics) || !json.metrics.length) {
+        toast('JSON은 찾았지만 지표(metrics) 항목이 비어 있습니다. Claude에게 metrics 배열을 채워 다시 출력해 달라고 요청해 보세요.', 'error', 11000);
+        return;
       }
       p.poc = json;
     } else if (key.startsWith('sec_')) {
@@ -591,8 +664,8 @@
     } else if (key === 'review') {
       p.review = { content: text.trim(), at: Date.now() };
     } else if (key === 'deck') {
-      const json = extractJson(text);
-      if (!json || !Array.isArray(json.slides)) { toast('Deck 설계(JSON)를 찾지 못했습니다. slides 항목이 포함된 응답 전체를 붙여넣어 주세요.', 'error'); return; }
+      const json = extractJson(text, (v) => v && Array.isArray(v.slides) && v.slides.length);
+      if (!json || !Array.isArray(json.slides) || !json.slides.length) { explainJsonFailure(text, 'slides'); return; }
       p.deck = json;
     }
     save();
@@ -699,12 +772,15 @@
           okText: '알겠습니다', cancelText: '닫기'
         });
         break;
-      case 'togglePreview': {
-        const box = document.getElementById('fullPreview');
-        if (box.style.display === 'none') { box.innerHTML = buildPlanHtml(p); box.style.display = 'block'; }
-        else box.style.display = 'none';
+      case 'openPreview': openPreview(p); break;
+      case 'exportHwpx':
+        try {
+          exportHwpx(p);
+          toast('한글 파일(.hwpx)을 내려받았습니다. 한글에서 열고 "다른 이름으로 저장 → .hwp"로 바꾸면 제출용이 됩니다.', 'ok', 9000);
+        } catch (e) {
+          toast('한글 파일 생성 실패: ' + e.message + ' — DOCX를 이용해 주세요.', 'error');
+        }
         break;
-      }
     }
   }
 

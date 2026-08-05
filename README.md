@@ -52,12 +52,15 @@ python3 -m http.server 8000
 
 ## 산출물 형식
 
-- **DOCX** — 맑은 고딕, 개조식 계층, 마크다운 표 → Word 표 변환 ([docx](https://github.com/dolanmiu/docx) 내장)
+- **미리보기** — 제출본 형태로 전체 문서를 크게 확인하고 그 자리에서 인쇄까지. 4단계와 내보내기에서 열 수 있습니다.
+- **한글 파일 (.hwpx)** — 한컴오피스 한글이 바로 여는 개방형 표준(OWPML). 열어서 `다른 이름으로 저장 → .hwp`로 바꾸면 제출용이 됩니다. 개조식 계층과 표를 유지합니다.
+- **DOCX** — 맑은 고딕, 개조식 계층, 마크다운 표 → Word 표 변환 ([docx](https://github.com/dolanmiu/docx) 내장). 한글에서도 열립니다.
 - **PPTX** — 16:9, 표지 + 슬라이드 + 발표자 노트(대본) ([PptxGenJS](https://github.com/gitbrent/PptxGenJS) 내장)
-- **PDF** — 브라우저 인쇄 대화상자 → "PDF로 저장" (실제 페이지 수 확인 용도로도 사용)
-- **HWP 호환** — HWP는 비공개 포맷이라 직접 생성 불가. 두 경로 제공:
-  1. DOCX 다운로드 → 한글(2014+)에서 열기 → "다른 이름으로 저장 → *.hwp"
-  2. "서식 복사" 버튼 → 한글에 바로 붙여넣기 (HTML 클립보드)
+- **PDF** — 인쇄 대화상자 → "PDF로 저장". 새 창이 막힌 환경에서는 숨은 프레임으로 인쇄를 시도합니다.
+- **한글에 붙여넣기** — 파일 없이, 열려 있는 한글 문서에 서식 그대로 붙여넣기
+
+> `.hwpx` 생성은 ZIP·XML 구조와 자체 파서 왕복까지 검증했지만, 이 개발 환경에는 한컴오피스 한글이 없어
+> **실제 한글에서 열리는지는 확인하지 못했습니다.** 열리지 않으면 DOCX를 받아 한글에서 여는 경로를 이용하세요.
 
 ## 공고문 파일 업로드
 
@@ -81,7 +84,8 @@ python3 -m http.server 8000
 index.html          앱 진입점 (빌드 없음, script 태그 로드)
 css/style.css       스타일
 js/programs.js      사업 유형별 목차·배점·페이지 배분, 딥테크 분야, 감점/고득점 체크리스트
-js/prompts.js       단계별 프롬프트 빌더 + JSON 응답 파서
+js/prompts.js       단계별 프롬프트 빌더 + 관대한 JSON 응답 파서
+js/hwpx.js          한글 문서(HWPX/OWPML) 생성기 — ZIP 작성기 포함
 js/fileparse.js     공고문 파일 파서 (HWP·HWPX·PDF·DOCX·PPTX)
 js/export.js        개조식 파서, DOCX/PPTX/PDF/HWP 내보내기
 js/app.js           위저드 UI, localStorage 상태 관리

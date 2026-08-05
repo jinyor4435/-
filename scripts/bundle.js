@@ -31,6 +31,7 @@ const scripts = [
   'js/fileparse.js',
   'js/programs.js',
   'js/prompts.js',
+  'js/hwpx.js',
   'js/export.js',
   'js/app.js'
 ].map((f) => `<script>\n/* ── ${f} ── */\n${sanitize(read(f))}\n</script>`).join('\n');
