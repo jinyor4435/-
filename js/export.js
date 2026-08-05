@@ -100,6 +100,10 @@ function buildPlanHtml(project) {
     parts.push(`<h2>${esc(sec.title)}</h2>`);
     parts.push(blocksToHtml(parseContent(s.content)));
   }
+  if (project.poc) {
+    parts.push('<h2>붙임. PoC 검증 계획</h2>');
+    parts.push(blocksToHtml(parseContent(pocToMarkdown(project.poc))));
+  }
   return parts.join('\n');
 }
 
@@ -180,15 +184,20 @@ async function exportDocx(project) {
   if (idea.oneLiner) {
     children.push(new d.Paragraph({ children: [new d.TextRun({ text: idea.oneLiner, color: '444444' })], spacing: { after: 240 } }));
   }
+  const sectionHeading = (text) => new d.Paragraph({
+    children: [new d.TextRun({ text, bold: true, size: 26, color: '1A3A6B' })],
+    spacing: { before: 320, after: 120 },
+    border: { left: { style: d.BorderStyle.SINGLE, size: 24, color: '1A3A6B', space: 6 } }
+  });
   for (const sec of sections) {
     const s = (project.sections || {})[sec.id];
     if (!s || !s.content) continue;
-    children.push(new d.Paragraph({
-      children: [new d.TextRun({ text: sec.title, bold: true, size: 26, color: '1A3A6B' })],
-      spacing: { before: 320, after: 120 },
-      border: { left: { style: d.BorderStyle.SINGLE, size: 24, color: '1A3A6B', space: 6 } }
-    }));
+    children.push(sectionHeading(sec.title));
     children.push(...blocksToDocxChildren(parseContent(s.content)));
+  }
+  if (project.poc) {
+    children.push(sectionHeading('붙임. PoC 검증 계획'));
+    children.push(...blocksToDocxChildren(parseContent(pocToMarkdown(project.poc))));
   }
 
   const doc = new d.Document({
@@ -282,10 +291,12 @@ async function copyHwpHtml(project) {
 
 function plainTextOf(project) {
   const sections = getSections(project);
-  return sections.map((sec) => {
+  const parts = sections.map((sec) => {
     const s = (project.sections || {})[sec.id];
     return s && s.content ? sec.title + '\n\n' + s.content : '';
-  }).filter(Boolean).join('\n\n\n');
+  }).filter(Boolean);
+  if (project.poc) parts.push('붙임. PoC 검증 계획\n\n' + pocToMarkdown(project.poc));
+  return parts.join('\n\n\n');
 }
 
 /* ─────────────── 공용 ─────────────── */

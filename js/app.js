@@ -9,16 +9,17 @@
   const STEPS = [
     { id: 'setup', label: '설정 · 사업 유형', num: '⚙' },
     { id: 'announce', label: '공고문 분석', num: '0' },
-    { id: 'idea', label: '딥테크 아이템 발굴', num: '1' },
+    { id: 'idea', label: '아이템 발굴·재정의', num: '1' },
     { id: 'plan', label: '사업 기획 (PSST)', num: '2' },
-    { id: 'write', label: '사업계획서 작성', num: '3' },
-    { id: 'review', label: '모의심사', num: '4' },
-    { id: 'deck', label: 'IR Deck', num: '5' },
+    { id: 'poc', label: 'PoC 검증 설계', num: '3' },
+    { id: 'write', label: '사업계획서 작성', num: '4' },
+    { id: 'review', label: '모의심사', num: '5' },
+    { id: 'deck', label: 'IR Deck', num: '6' },
     { id: 'export', label: '내보내기', num: '📦' }
   ];
 
   let state = { projects: {}, currentId: null };
-  const ui = { step: 'setup', activeSectionId: null, ideaFields: ['ai'], prompts: {} };
+  const ui = { step: 'setup', activeSectionId: null, ideaFields: ['ai'], ideaMode: 'new', prompts: {} };
 
   /* ───────── 저장/로드 ───────── */
 
@@ -62,7 +63,8 @@
       programType: 'package',
       company: {}, announcement: { rawText: '', analysis: null },
       ideas: [], selectedIdeaIndex: -1,
-      planning: { raw: '' }, sections: {}, review: { content: '' }, deck: null
+      reframeBiz: '',
+      planning: { raw: '' }, poc: null, sections: {}, review: { content: '' }, deck: null
     };
     state.currentId = id;
     return state.projects[id];
@@ -78,6 +80,7 @@
       case 'announce': return !!(p.announcement && p.announcement.analysis);
       case 'idea': return p.selectedIdeaIndex >= 0 && !!(p.ideas || [])[p.selectedIdeaIndex];
       case 'plan': return !!(p.planning && p.planning.raw);
+      case 'poc': return !!(p.poc && Array.isArray(p.poc.metrics) && p.poc.metrics.length);
       case 'write': {
         const secs = getSections(p);
         return secs.length > 0 && secs.every((s) => p.sections[s.id] && p.sections[s.id].content);
@@ -156,7 +159,7 @@
             ${(an.redFlags || []).length ? `<p><b>⚠ 실격/감점 조건:</b> ${an.redFlags.map(esc2).join(' · ')}</p>` : ''}
             ${an.fitAdvice ? `<p><b>프레이밍 조언:</b> ${esc2(an.fitAdvice)}</p>` : ''}
           </div>
-          ${(an.sections || []).length ? '<div class="alert ok">이 목차가 3단계 사업계획서 작성의 목차로 자동 적용됩니다 (공고 양식 우선 원칙).</div>' : ''}
+          ${(an.sections || []).length ? '<div class="alert ok">이 목차가 4단계 사업계획서 작성의 목차로 자동 적용됩니다 (공고 양식 우선 원칙).</div>' : ''}
         </div>`;
     }
     return `
@@ -185,20 +188,34 @@
         <span class="score">심사위원 매력도 ${esc2(idea.evaluatorScore || '-')}</span>
         <h4>${p.selectedIdeaIndex === i ? '✅ ' : ''}${esc2(idea.title)}</h4>
         <div class="row"><dt>정의</dt><dd>${esc2(idea.oneLiner)}</dd></div>
+        ${idea.before ? `<div class="row"><dt>기존 프레임</dt><dd>${esc2(idea.before)}</dd></div>
+        <div class="row"><dt>딥테크 프레임</dt><dd><b>${esc2(idea.after || '')}</b></dd></div>` : ''}
         <div class="row"><dt>기술 장벽</dt><dd>${esc2(idea.tech)}</dd></div>
         <div class="row"><dt>문제</dt><dd>${esc2(idea.problem)}</dd></div>
         <div class="row"><dt>지불 주체</dt><dd>${esc2(idea.customer)}</dd></div>
         <div class="row"><dt>차별성</dt><dd>${esc2(idea.moat)}</dd></div>
+        ${idea.minusPlus ? `<div class="row"><dt>절감/증대 효과</dt><dd>${esc2(idea.minusPlus)}</dd></div>` : ''}
         <div class="row"><dt>정책 연계</dt><dd>${esc2(idea.policyFit)} · TRL ${esc2(idea.trl)}</dd></div>
         <div class="row"><dt>리스크</dt><dd>${esc2(idea.risk)}</dd></div>
       </div>`).join('');
+    const isReframe = ui.ideaMode === 'reframe';
+    const modePanel = isReframe ? `
+        <div style="margin-top:12px"><label class="hint">현재 사업 설명 — 업종, 하는 일, 반복 업무(비효율), 보유 데이터(장부/POS/리뷰/상담기록/사진 등)를 자세히</label>
+        <textarea id="reframeBiz" placeholder="예: 동네 베이커리 운영 5년차. 매일 새벽 생산량을 감으로 결정, 당일 폐기율 약 25%. POS 3년치 판매 기록과 네이버 리뷰 1,200건 보유.">${esc2(p.reframeBiz || '')}</textarea></div>`
+      : `<div class="field-grid" style="margin-top:8px">${chips}</div>`;
     return `
-      <h1 class="step-title">1. 딥테크 아이템 발굴</h1>
-      <p class="step-desc">심사위원이 "이건 붙는다"고 판단하는 조건(기술 장벽 실재, 지불 주체 명확, 정책 연계, 소규모 팀 검증 가능)으로 아이템 5개를 생성합니다.</p>
-      <div class="card"><h3>탐색 분야 선택 (복수 가능)</h3><div class="field-grid">${chips}</div>
+      <h1 class="step-title">1. 아이템 발굴 · 재정의</h1>
+      <p class="step-desc">신규 딥테크 아이템을 발굴하거나, 이미 하고 있는 사업을 심사위원이 "딥테크 과제"로 인식하도록 재정의합니다. 지원금의 단위를 바꾸는 것은 기술력이 아니라 프레임입니다.</p>
+      <div class="card">
+        <div class="btn-row">
+          <button class="btn ${isReframe ? 'secondary' : ''}" data-act="ideaMode" data-mode="new">🔭 신규 아이템 발굴</button>
+          <button class="btn ${isReframe ? '' : 'secondary'}" data-act="ideaMode" data-mode="reframe">♻️ 기존 사업 딥테크 재정의</button>
+        </div>
+        ${isReframe ? '<p class="hint">기존 사업의 비효율을 기술적 병목으로, 보유 데이터를 해자로 격상하는 재정의안 3~5개를 생성합니다.</p>' : '<p class="hint">탐색 분야 선택 (복수 가능)</p>'}
+        ${modePanel}
         <div style="margin-top:12px"><label class="hint">추가 방향성 (선택)</label>
-        <input type="text" id="ideaDirection" placeholder="예: 제조업 현장 적용 가능한 것, 하드웨어 없이 소프트웨어만으로 가능한 것"></div>
-        ${promptBlock('idea', null, '아이템 발굴 프롬프트 생성')}
+        <input type="text" id="ideaDirection" placeholder="예: 하드웨어 없이 소프트웨어만으로 가능한 것, B2B 위주"></div>
+        ${promptBlock('idea', null, isReframe ? '재정의 프롬프트 생성' : '아이템 발굴 프롬프트 생성')}
       </div>
       <div class="card"><h3>Claude 응답 (JSON 배열)</h3>${pasteBlock('idea')}</div>
       ${cards ? `<div class="card"><h3>생성된 아이템 — 클릭해서 1개 선정</h3>${cards}</div>` : ''}
@@ -223,6 +240,32 @@
       ${view ? `<div class="card"><h3>확정된 기획</h3>${view}</div>` : ''}
       <div class="btn-row">
         <button class="btn secondary" data-act="goStep" data-step="idea">← 이전</button>
+        <button class="btn big" data-act="goStep" data-step="poc">다음: PoC 검증 설계 →</button>
+      </div>`;
+  }
+
+  function renderPoc(p) {
+    const poc = p.poc;
+    let canvas = '';
+    if (poc) {
+      canvas = `
+        <div class="card"><h3>PoC 캔버스</h3>
+          <div class="preview">${blocksToHtml(parseContent(pocToMarkdown(poc)))}</div>
+          <div class="btn-row">
+            <button class="btn secondary" data-act="copyPocMd">📋 계획서 붙여넣기용 텍스트 복사 (개조식+표)</button>
+          </div>
+          <div class="alert ok">이 PoC 계획은 4단계 섹션 작성 프롬프트에 자동 포함되고, 문서 내보내기 시 "붙임. PoC 검증 계획"으로 첨부됩니다.</div>
+        </div>`;
+    }
+    return `
+      <h1 class="step-title">3. PoC 검증 설계</h1>
+      <p class="step-desc">심사위원이 가장 싫어하는 문장은 "검증하겠습니다"(숫자·방법 없음)입니다. 가설 1개 → 환경·방법 → 지표(정의·단위·측정법·산출식) → 숫자 임계값(Go/No-Go) → Plan B 구조의 검증계획을 설계합니다.</p>
+      ${p.planning && p.planning.raw ? '' : '<div class="alert warn">2단계 기획을 먼저 완료하면 PoC가 기획 수치와 일치하게 설계됩니다.</div>'}
+      <div class="card"><h3>PoC 설계 프롬프트</h3>${promptBlock('poc', null, 'PoC 설계 프롬프트 생성')}</div>
+      <div class="card"><h3>Claude 응답 (JSON)</h3>${pasteBlock('poc')}</div>
+      ${canvas}
+      <div class="btn-row">
+        <button class="btn secondary" data-act="goStep" data-step="plan">← 이전</button>
         <button class="btn big" data-act="goStep" data-step="write">다음: 사업계획서 작성 →</button>
       </div>`;
   }
@@ -250,7 +293,7 @@
         ${cont ? `<h3>미리보기</h3><div class="preview">${blocksToHtml(parseContent(cont))}</div>` : ''}
       </div>` : '';
     return `
-      <h1 class="step-title">3. 사업계획서 작성</h1>
+      <h1 class="step-title">4. 사업계획서 작성</h1>
       <p class="step-desc">배점에 비례해 지면을 배분한 목차입니다. 섹션을 하나씩 작성하세요 — 각 프롬프트에는 확정 기획과 이미 쓴 섹션의 요지가 함께 들어가 문서 전체 일관성을 유지합니다.</p>
       <div class="card">
         <h3>진행 상황 ${doneCount}/${secs.length}</h3>
@@ -258,16 +301,16 @@
         ${list}
       </div>
       ${activePanel}
-      ${doneCount === secs.length && secs.length ? '<div class="alert ok">전 섹션 작성 완료. 4단계 모의심사로 검증하세요.</div>' : ''}
+      ${doneCount === secs.length && secs.length ? '<div class="alert ok">전 섹션 작성 완료. 5단계 모의심사로 검증하세요.</div>' : ''}
       <div class="btn-row">
-        <button class="btn secondary" data-act="goStep" data-step="plan">← 이전</button>
+        <button class="btn secondary" data-act="goStep" data-step="poc">← 이전</button>
         <button class="btn big" data-act="goStep" data-step="review">다음: 모의심사 →</button>
       </div>`;
   }
 
   function renderReview(p) {
     return `
-      <h1 class="step-title">4. 모의심사</h1>
+      <h1 class="step-title">5. 모의심사</h1>
       <p class="step-desc">제출 전, 심사위원 페르소나가 실제 심사처럼 채점합니다 — 섹션별 점수, 감점 요인 전수 점검, 문서 간 수치 불일치, 【확인】 마커 목록, 점수를 가장 올릴 수정 3가지.</p>
       <div class="card"><h3>모의심사 프롬프트</h3>${promptBlock('review', null, '모의심사 프롬프트 생성')}</div>
       <div class="card"><h3>심사 결과 붙여넣기</h3>${pasteBlock('review')}</div>
@@ -289,7 +332,7 @@
         ${s.script ? `<div class="script">🎤 ${esc2(s.script)}</div>` : ''}
       </div>`).join('') : '';
     return `
-      <h1 class="step-title">5. IR Deck (대면평가 발표자료)</h1>
+      <h1 class="step-title">6. IR Deck (대면평가 발표자료)</h1>
       <p class="step-desc">확정 사업계획서와 수치가 일치하는 발표자료를 설계합니다. 슬라이드당 메시지 1개, 발표 대본 포함.</p>
       <div class="card"><h3>Deck 설계 프롬프트</h3>${promptBlock('deck', null, 'IR Deck 프롬프트 생성')}</div>
       <div class="card"><h3>Claude 응답 (JSON)</h3>${pasteBlock('deck')}</div>
@@ -306,7 +349,7 @@
     const doneCount = secs.filter((s) => p.sections[s.id] && p.sections[s.id].content).length;
     return `
       <h1 class="step-title">내보내기</h1>
-      <p class="step-desc">사업계획서 ${doneCount}/${secs.length} 섹션 작성됨${p.deck ? ' · IR Deck ' + (p.deck.slides || []).length + '장 준비됨' : ''}</p>
+      <p class="step-desc">사업계획서 ${doneCount}/${secs.length} 섹션 작성됨${p.poc ? ' · PoC 검증 계획 포함(붙임 첨부)' : ''}${p.deck ? ' · IR Deck ' + (p.deck.slides || []).length + '장 준비됨' : ''}</p>
       <div class="export-grid">
         <div class="export-card"><h4>📄 DOCX (Word)</h4><p>맑은 고딕 · 개조식 · 표 포함. 제출 전 마지막 수정에 가장 편한 형식.</p>
           <button class="btn" data-act="exportDocx">DOCX 다운로드</button></div>
@@ -363,7 +406,18 @@
     }
     if (key === 'idea') {
       const dir = document.getElementById('ideaDirection');
-      return buildIdeaPrompt(p, ui.ideaFields, dir ? dir.value.trim() : '');
+      const direction = dir ? dir.value.trim() : '';
+      if (ui.ideaMode === 'reframe') {
+        const biz = document.getElementById('reframeBiz');
+        if (biz) { p.reframeBiz = biz.value; save(); }
+        if (!(p.reframeBiz || '').trim()) { alert('현재 사업 설명을 먼저 입력하세요.'); return null; }
+        return buildReframePrompt(p, p.reframeBiz.trim(), direction);
+      }
+      return buildIdeaPrompt(p, ui.ideaFields, direction);
+    }
+    if (key === 'poc') {
+      if (!(p.selectedIdeaIndex >= 0 && p.ideas[p.selectedIdeaIndex])) { alert('1단계에서 아이템을 먼저 선정하세요.'); return null; }
+      return buildPocPrompt(p);
     }
     if (key === 'plan') {
       if (!(p.selectedIdeaIndex >= 0 && p.ideas[p.selectedIdeaIndex])) { alert('1단계에서 아이템을 먼저 선정하세요.'); return null; }
@@ -407,6 +461,12 @@
     } else if (key === 'plan') {
       p.planning = { raw: text.trim() };
       if (!/\[P\d/.test(text)) alert('경고: [P1]~[P10] 태그가 보이지 않습니다. 저장은 되었지만, 태그가 있어야 항목별로 정리됩니다.');
+    } else if (key === 'poc') {
+      const json = extractJson(text);
+      if (!json || typeof json !== 'object' || Array.isArray(json) || !Array.isArray(json.metrics)) {
+        alert('PoC JSON({purpose, hypothesis, metrics:[...], ...})을 찾지 못했습니다.'); return;
+      }
+      p.poc = json;
     } else if (key.startsWith('sec_')) {
       p.sections[key.slice(4)] = { content: text.trim(), updatedAt: Date.now() };
     } else if (key === 'review') {
@@ -433,6 +493,15 @@
         render(); break;
       }
       case 'pickIdea': p.selectedIdeaIndex = Number(el.getAttribute('data-idx')); save(); render(); break;
+      case 'ideaMode': ui.ideaMode = el.getAttribute('data-mode'); render(); break;
+      case 'copyPocMd':
+        if (p.poc) {
+          navigator.clipboard.writeText(pocToMarkdown(p.poc)).then(
+            () => flash(el, '✓ 복사됨'),
+            () => alert('클립보드 복사 실패')
+          );
+        }
+        break;
       case 'pickSection': ui.activeSectionId = el.getAttribute('data-sec'); render(); break;
       case 'genPrompt': {
         const key = el.getAttribute('data-key');
@@ -492,7 +561,7 @@
 
   const RENDERERS = {
     setup: renderSetup, announce: renderAnnounce, idea: renderIdea, plan: renderPlan,
-    write: renderWrite, review: renderReview, deck: renderDeck, export: renderExport
+    poc: renderPoc, write: renderWrite, review: renderReview, deck: renderDeck, export: renderExport
   };
 
   function render() {
@@ -528,6 +597,7 @@
         cur().company[t.getAttribute('data-company')] = t.value; save();
       }
       if (t.id === 'annRaw') { cur().announcement.rawText = t.value; save(); }
+      if (t.id === 'reframeBiz') { cur().reframeBiz = t.value; save(); }
     });
 
     document.getElementById('projectSelect').addEventListener('change', (e) => {

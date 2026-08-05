@@ -151,6 +151,52 @@ function buildIdeaPrompt(project, fieldIds, userDirection) {
   ].filter(Boolean).join('\n');
 }
 
+/* ─────────────────── 1단계-B: 기존 사업 딥테크 재정의 ─────────────────── */
+
+function buildReframePrompt(project, bizDesc, userDirection) {
+  const program = PROGRAMS[project.programType] || PROGRAMS.package;
+  return [
+    evaluatorPersona(),
+    '',
+    `당신은 "${program.name}" 제출을 앞둔 기존 사업자의 사업을 딥테크 과제로 재정의(리프레이밍)해야 한다.`,
+    '원칙: 지원금의 단위를 바꾸는 것은 기술력이 아니라 사업을 정의하는 프레임이다.',
+    '- "개인의 장사"가 아니라 "산업 전체의 고질적 손실(폐기율·불량률·인건비·시간)을 제거하는 기술 과제"로 재정의하라.',
+    '- 문제를 기술적 병목으로 다시 써라: 어떤 기술적 한계·데이터 부재 때문에 이 비효율이 여태 해결되지 않았는가.',
+    '- 사업자가 이미 보유한 현장 데이터(장부, POS 기록, 리뷰, 상담 로그, 불량 샘플, 이미지)를 대기업이 가질 수 없는 학습 데이터 해자로 격상하라.',
+    '- 마이너스 제거(비용·시간·자원 절감) 논리를 우선하고, As-Is → To-Be 수치 대비로 서술하라.',
+    '- 재정의는 과장이 아니라 실행 가능해야 한다: 협약기간 내 PoC로 검증 가능한 범위로 설계하고, 근거 없는 수치는 (가정치)로 표기하라.',
+    '',
+    '── 현재 사업 설명 ──',
+    bizDesc,
+    '',
+    announcementContext(project),
+    companyContext(project),
+    userDirection ? '사용자 추가 방향성: ' + userDirection : '',
+    '',
+    '이 사업을 딥테크 과제로 재정의하는 방안 3~5개를 제안하라.',
+    '반드시 아래 스키마의 JSON 배열 하나만 ```json 코드블록으로 출력하라.',
+    '',
+    '```json',
+    JSON.stringify([{
+      title: '재정의된 기술 과제명',
+      oneLiner: '"본 과제는 [기술명]을 활용하여 [기존의 기술적 한계]를 극복하고 [최종 목표]를 달성하는 [서비스명]입니다" 형식의 한 줄 정의',
+      before: '기존 프레임 — 지금 심사위원이 이 사업을 보는 방식 1문장',
+      after: '딥테크 프레임 — 재정의 후 1문장',
+      field: '딥테크 분야',
+      tech: '핵심 기술과 기술적 병목이 무엇인지 2문장',
+      problem: '산업 전체의 고질적 손실 (As-Is 수치 포함)',
+      customer: '지불 주체 — 누가 왜 얼마를 내는가',
+      moat: '보유 현장 데이터의 독점성과 축적 선순환(Lock-in) 구조',
+      minusPlus: '마이너스 제거 효과(As-Is → To-Be 수치) + 플러스 극대화 여지',
+      policyFit: '연결되는 정부 정책/국가전략기술',
+      trl: '현실적으로 시작 가능한 TRL 단계 (1~9)',
+      risk: '가장 큰 리스크 1개와 검증 방법',
+      evaluatorScore: '심사위원 관점 매력도 1~10과 그 이유 1문장'
+    }], null, 2),
+    '```'
+  ].filter(Boolean).join('\n');
+}
+
 /* ─────────────────────────── 2단계: PSST 기획 ─────────────────────────── */
 
 function buildPlanningPrompt(project) {
@@ -187,7 +233,101 @@ function buildPlanningPrompt(project) {
   ].join('\n');
 }
 
-/* ─────────────────────────── 3단계: 섹션별 사업계획서 작성 ─────────────────────────── */
+/* ─────────────────────────── 3단계: PoC 검증 설계 ─────────────────────────── */
+
+function buildPocPrompt(project) {
+  return [
+    evaluatorPersona(),
+    '',
+    '선정 아이템과 확정 기획을 바탕으로 심사위원을 설득할 PoC(검증계획)를 설계한다.',
+    '',
+    'PoC 설계 3요소와 심사에서의 역할:',
+    '- 실험 설계(가설·변수·방법·대상 구체화) → 재현성·현실성 판단 기준',
+    '- 지표(KPI, 성과를 숫자로 측정하는 기준) → 객관성·성과 기대치 판단 기준',
+    '- 성공 기준(임계값과 Go/No-Go 판단 규칙) → 실행력·리스크 관리 판단 기준',
+    '',
+    '철칙:',
+    '- 1 PoC = 1 핵심 가설. 가설이 많으면 설계가 흐려진다.',
+    '- 지표는 이름만 쓰면 점수가 없다. 정의·단위·측정 방법·산출식까지 한 줄로 완성하라.',
+    '- 성공 기준은 "좋아지면 성공"이 아니라 숫자 임계값 + 판단 규칙(Go/No-Go)으로.',
+    '- 심사위원이 가장 싫어하는 문장: "검증하겠습니다/테스트하겠습니다" (숫자와 방법 없음).',
+    '- 비교군(Baseline) 대비 개선치를 목표로, 반복 횟수와 평균/분산 보고를 명시하라.',
+    '- 샘플 수/반복 횟수, 실패 시 Plan B, 로그·측정 원본 보관 방식을 포함하라.',
+    '',
+    selectedIdeaContext(project),
+    planningContext(project),
+    '',
+    '반드시 아래 스키마의 JSON 하나만 ```json 코드블록으로 출력하라.',
+    '',
+    '```json',
+    JSON.stringify({
+      purpose: 'PoC 목적 (한 문장)',
+      hypothesis: '핵심 가설 1개 (숫자 포함. 예: 제안 모델은 기존 대비 정확도 +5%p 이상 개선, 지연 200ms 이하 유지)',
+      target: '검증 대상 (데이터/시제품/알고리즘/모듈/공정 등)',
+      environment: '검증 환경 (장소/장비/클라우드/데이터 수/부하 조건 등 구체적으로)',
+      method: '검증 방법 (실험 설계 요약: 샘플 수, 비교군, 반복 횟수, 테스트 시나리오)',
+      baseline: '비교군(Baseline) — 기존 모델/기존 공정/시장 표준/경쟁 제품',
+      repeat: '반복 횟수와 결과 보고 방식 (예: 3회 반복 후 평균·표준편차 보고)',
+      metrics: [{
+        name: '지표명', definition: '무엇을 측정하는가', unit: '단위',
+        method: '측정 방법/도구', formula: '산출식 또는 기준',
+        asIs: '현재 수준(As-Is)', toBe: '목표(To-Be)', threshold: '성공 임계값'
+      }],
+      goRule: 'Go/No-Go 판단 규칙 (예: 지표1 ≥ X & 지표2 ≤ Y → Go)',
+      planB: '성공 기준 미달 시 대응 (원인 가설 검증 → Plan B 전환 2차 PoC)',
+      deliverables: '산출물 (결과 리포트/테스트 로그/재현 스크립트/시험 성적서 등)',
+      schedule: [{ week: 'W1', task: '주요 작업', owner: '담당(역할)', resource: '필요 자원(장비/클라우드/외주)', output: '산출물' }],
+      sentence: '"본 PoC는 [환경/조건]에서 [방법/도구]로 [지표]를 측정하며, [임계값] 이상 달성 시 성공으로 판단한다" 형식의 완성 문장'
+    }, null, 2),
+    '```'
+  ].join('\n');
+}
+
+/** PoC JSON → 개조식+마크다운 표 텍스트 (문서 삽입·클립보드·프롬프트 컨텍스트 공용) */
+function pocToMarkdown(poc) {
+  if (!poc) return '';
+  const cell = (v) => String(v == null ? '' : v).replace(/\|/g, '/').replace(/\n/g, ' ');
+  const lines = [];
+  lines.push('□ PoC 목적: ' + cell(poc.purpose));
+  lines.push('□ 핵심 가설: ' + cell(poc.hypothesis));
+  if (poc.sentence) lines.push('□ 검증 문장: ' + cell(poc.sentence));
+  lines.push('');
+  lines.push('| 항목 | 내용 |');
+  lines.push('|---|---|');
+  lines.push('| 검증 대상 | ' + cell(poc.target) + ' |');
+  lines.push('| 검증 환경 | ' + cell(poc.environment) + ' |');
+  lines.push('| 검증 방법 | ' + cell(poc.method) + ' |');
+  lines.push('| 비교군(Baseline) | ' + cell(poc.baseline) + ' |');
+  lines.push('| 반복/보고 | ' + cell(poc.repeat) + ' |');
+  lines.push('| 산출물 | ' + cell(poc.deliverables) + ' |');
+  lines.push('');
+  if (Array.isArray(poc.metrics) && poc.metrics.length) {
+    lines.push('| 지표 | 정의 | 단위 | 측정 방법 | 산출식 | As-Is | To-Be | 임계값 |');
+    lines.push('|---|---|---|---|---|---|---|---|');
+    for (const m of poc.metrics) {
+      lines.push('| ' + [m.name, m.definition, m.unit, m.method, m.formula, m.asIs, m.toBe, m.threshold].map(cell).join(' | ') + ' |');
+    }
+    lines.push('');
+  }
+  lines.push('□ Go/No-Go 판단 규칙: ' + cell(poc.goRule));
+  lines.push('□ 실패 시 Plan B: ' + cell(poc.planB));
+  if (Array.isArray(poc.schedule) && poc.schedule.length) {
+    lines.push('');
+    lines.push('| 주차 | 주요 작업 | 담당 | 필요 자원 | 산출물 |');
+    lines.push('|---|---|---|---|---|');
+    for (const w of poc.schedule) {
+      lines.push('| ' + [w.week, w.task, w.owner, w.resource, w.output].map(cell).join(' | ') + ' |');
+    }
+  }
+  return lines.join('\n');
+}
+
+function pocContext(project) {
+  if (!project.poc) return '';
+  return '확정된 PoC 검증 계획 (검증/실현가능성 관련 서술은 이 계획과 일치시킬 것):\n' + pocToMarkdown(project.poc);
+}
+
+/* ─────────────────────────── 4단계: 섹션별 사업계획서 작성 ─────────────────────────── */
 
 function buildSectionPrompt(project, section) {
   const program = PROGRAMS[project.programType] || PROGRAMS.package;
@@ -209,6 +349,7 @@ function buildSectionPrompt(project, section) {
     '',
     selectedIdeaContext(project),
     planningContext(project),
+    pocContext(project),
     announcementContext(project),
     companyContext(project),
     done.length ? '\n' + done.join('\n\n') : '',
@@ -252,8 +393,9 @@ function buildReviewPrompt(project) {
     '6. 종합: 합격선 통과 여부 판정과, 점수를 가장 많이 올릴 수정 3가지 (수정 지시는 복사해서 바로 쓸 수 있게 구체적으로)',
     '',
     '── 사업계획서 본문 ──',
-    body
-  ].join('\n');
+    body,
+    project.poc ? '\n── 붙임: PoC 검증 계획 ──\n' + pocToMarkdown(project.poc) : ''
+  ].filter(Boolean).join('\n');
 }
 
 /* ─────────────────────────── 5단계: IR Deck ─────────────────────────── */
@@ -342,7 +484,7 @@ function extractJson(text) {
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    evaluatorPersona, buildAnnouncementPrompt, buildIdeaPrompt, buildPlanningPrompt,
-    buildSectionPrompt, buildReviewPrompt, buildDeckPrompt, getSections, extractJson
+    evaluatorPersona, buildAnnouncementPrompt, buildIdeaPrompt, buildReframePrompt, buildPlanningPrompt,
+    buildPocPrompt, pocToMarkdown, buildSectionPrompt, buildReviewPrompt, buildDeckPrompt, getSections, extractJson
   };
 }
