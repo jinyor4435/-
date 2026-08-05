@@ -37,21 +37,28 @@
   }
 
   let saveTimer = null;
+  let storageBlocked = false;
   function save() {
     const p = cur();
     if (p) p.updatedAt = Date.now();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      localStorage.setItem(LS_KEY, JSON.stringify(state));
-      flashSave();
+      // 일부 환경(내장 프레임, 시크릿 모드)은 저장소를 막는다. 이때도 앱은 계속 동작해야 한다.
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify(state));
+        flashSave('저장됨 ✓');
+      } catch (e) {
+        storageBlocked = true;
+        flashSave('임시 저장 (브라우저 저장 불가)', 3000);
+      }
     }, 250);
   }
 
-  function flashSave() {
+  function flashSave(text, ms) {
     const el = document.getElementById('saveStatus');
     if (!el) return;
-    el.textContent = '저장됨 ✓';
-    setTimeout(() => { el.textContent = ''; }, 1500);
+    el.textContent = text;
+    setTimeout(() => { el.textContent = ''; }, ms || 1500);
   }
 
   function cur() { return state.projects[state.currentId]; }
@@ -138,7 +145,8 @@
           <label>기타</label><input type="text" data-company="notes" value="${esc2(c.notes || '')}" placeholder="자유 기재">
         </div>
       </div>
-      <div class="alert info">이 도구는 API 키 없이 동작합니다. 각 단계에서 <b>프롬프트 생성 → Claude에 붙여넣기 → 응답을 앱에 되붙이기</b> 흐름으로 진행되며, 모든 데이터는 이 브라우저의 localStorage에만 저장됩니다.</div>
+      <div class="alert info">이 도구는 API 키 없이 동작합니다. 각 단계에서 <b>프롬프트 생성 → Claude에 붙여넣기 → 응답을 앱에 되붙이기</b> 흐름으로 진행되며, 모든 데이터는 이 브라우저에만 저장됩니다.</div>
+      ${storageBlocked ? '<div class="alert warn">이 환경에서는 브라우저 저장소가 차단되어 작업 내용이 새로고침 시 사라집니다. 진행 중이라면 <b>내보내기 → 프로젝트 백업</b>으로 JSON을 저장해 두세요.</div>' : ''}
       <div class="btn-row"><button class="btn big" data-act="goStep" data-step="announce">다음: 공고문 분석 →</button></div>`;
   }
 
@@ -648,5 +656,6 @@
     render();
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
