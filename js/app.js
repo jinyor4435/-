@@ -48,8 +48,14 @@
         localStorage.setItem(LS_KEY, JSON.stringify(state));
         flashSave('저장됨 ✓');
       } catch (e) {
+        const first = !storageBlocked;
         storageBlocked = true;
         flashSave('임시 저장 (브라우저 저장 불가)', 3000);
+        if (first) {
+          toast('이 환경에서는 브라우저 저장소가 막혀 있어, 새로고침하면 작업 내용이 사라집니다. ' +
+            '내보내기 → 프로젝트 백업으로 수시로 저장해 주세요.', 'warn', 12000);
+          render();  // 상단 경고 배너를 띄운다
+        }
       }
     }, 250);
   }
@@ -98,9 +104,92 @@
     }
   }
 
-  /* ───────── 공용 렌더 헬퍼 ───────── */
+  /* ───────── 알림·확인·입력 (브라우저 기본 대화상자는 내장 환경에서 무시된다) ───────── */
 
   function esc2(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  /** 화면 우측 상단 알림. type: info | ok | warn | error */
+  function toast(message, type, ms) {
+    let box = document.getElementById('toastBox');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'toastBox';
+      document.body.appendChild(box);
+    }
+    const el = document.createElement('div');
+    el.className = 'toast ' + (type || 'info');
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.innerHTML = `<span class="toast-msg">${esc2(message).replace(/\n/g, '<br>')}</span>
+      <button class="toast-x" aria-label="닫기">×</button>`;
+    el.querySelector('.toast-x').addEventListener('click', () => el.remove());
+    box.appendChild(el);
+    const life = ms || (type === 'error' ? 9000 : type === 'warn' ? 7000 : 3500);
+    setTimeout(() => { el.classList.add('leaving'); setTimeout(() => el.remove(), 250); }, life);
+    return el;
+  }
+
+  /**
+   * 앱 자체 대화상자. opts.input 을 주면 입력창을 띄운다.
+   * 반환: 확인 시 true(또는 입력값), 취소 시 false(또는 null)
+   */
+  function dialog(opts) {
+    return new Promise((resolve) => {
+      const o = opts || {};
+      const back = document.createElement('div');
+      back.className = 'modal-back';
+      back.innerHTML = `
+        <div class="modal" role="dialog" aria-modal="true">
+          <h3>${esc2(o.title || '확인')}</h3>
+          ${o.message ? `<p>${esc2(o.message).replace(/\n/g, '<br>')}</p>` : ''}
+          ${o.input !== undefined ? `<input type="text" class="modal-input" value="${esc2(o.input)}">` : ''}
+          <div class="modal-actions">
+            <button class="btn secondary" data-role="cancel">${esc2(o.cancelText || '취소')}</button>
+            <button class="btn ${o.danger ? 'danger-solid' : ''}" data-role="ok">${esc2(o.okText || '확인')}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(back);
+
+      const field = back.querySelector('.modal-input');
+      const done = (value) => { back.remove(); document.removeEventListener('keydown', onKey); resolve(value); };
+      const cancelValue = o.input !== undefined ? null : false;
+      const okValue = () => (o.input !== undefined ? (field.value.trim() || o.input) : true);
+
+      back.querySelector('[data-role="cancel"]').addEventListener('click', () => done(cancelValue));
+      back.querySelector('[data-role="ok"]').addEventListener('click', () => done(okValue()));
+      back.addEventListener('click', (e) => { if (e.target === back) done(cancelValue); });
+
+      const onKey = (e) => {
+        if (e.key === 'Escape') done(cancelValue);
+        if (e.key === 'Enter' && field) done(okValue());
+      };
+      document.addEventListener('keydown', onKey);
+
+      setTimeout(() => { (field || back.querySelector('[data-role="ok"]')).focus(); if (field) field.select(); }, 30);
+    });
+  }
+
+  const confirmDialog = (message, opts) => dialog(Object.assign({ title: '확인', message }, opts || {}));
+  const promptDialog = (message, value, opts) => dialog(Object.assign({ title: message, input: value || '' }, opts || {}));
+
+  /** 클립보드 복사 — 권한이 막힌 환경에서도 최대한 성공시키고, 실패는 눈에 보이게 알린다 */
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) { /* 아래 폴백 */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  /* ───────── 공용 렌더 헬퍼 ───────── */
 
   function promptBlock(key, generateFn, buttonLabel) {
     const val = ui.prompts[key] || '';
@@ -146,7 +235,6 @@
         </div>
       </div>
       <div class="alert info">이 도구는 API 키 없이 동작합니다. 각 단계에서 <b>프롬프트 생성 → Claude에 붙여넣기 → 응답을 앱에 되붙이기</b> 흐름으로 진행되며, 모든 데이터는 이 브라우저에만 저장됩니다.</div>
-      ${storageBlocked ? '<div class="alert warn">이 환경에서는 브라우저 저장소가 차단되어 작업 내용이 새로고침 시 사라집니다. 진행 중이라면 <b>내보내기 → 프로젝트 백업</b>으로 JSON을 저장해 두세요.</div>' : ''}
       <div class="btn-row"><button class="btn big" data-act="goStep" data-step="announce">다음: 공고문 분석 →</button></div>`;
   }
 
@@ -432,7 +520,7 @@
     if (key === 'announce') {
       const raw = document.getElementById('annRaw');
       if (raw) { p.announcement.rawText = raw.value; save(); }
-      if (!p.announcement.rawText.trim()) { alert('공고문 원문을 먼저 붙여넣으세요.'); return null; }
+      if (!p.announcement.rawText.trim()) { toast('공고문 원문을 먼저 붙여넣거나 파일을 올려주세요.', 'warn'); return null; }
       return buildAnnouncementPrompt(p);
     }
     if (key === 'idea') {
@@ -441,34 +529,34 @@
       if (ui.ideaMode === 'reframe') {
         const biz = document.getElementById('reframeBiz');
         if (biz) { p.reframeBiz = biz.value; save(); }
-        if (!(p.reframeBiz || '').trim()) { alert('현재 사업 설명을 먼저 입력하세요.'); return null; }
+        if (!(p.reframeBiz || '').trim()) { toast('현재 사업 설명을 먼저 입력하세요.', 'warn'); return null; }
         return buildReframePrompt(p, p.reframeBiz.trim(), direction);
       }
       return buildIdeaPrompt(p, ui.ideaFields, direction);
     }
     if (key === 'poc') {
-      if (!(p.selectedIdeaIndex >= 0 && p.ideas[p.selectedIdeaIndex])) { alert('1단계에서 아이템을 먼저 선정하세요.'); return null; }
+      if (!(p.selectedIdeaIndex >= 0 && p.ideas[p.selectedIdeaIndex])) { toast('1단계에서 아이템을 먼저 선정하세요.', 'warn'); return null; }
       return buildPocPrompt(p);
     }
     if (key === 'plan') {
-      if (!(p.selectedIdeaIndex >= 0 && p.ideas[p.selectedIdeaIndex])) { alert('1단계에서 아이템을 먼저 선정하세요.'); return null; }
+      if (!(p.selectedIdeaIndex >= 0 && p.ideas[p.selectedIdeaIndex])) { toast('1단계에서 아이템을 먼저 선정하세요.', 'warn'); return null; }
       return buildPlanningPrompt(p);
     }
     if (key.startsWith('sec_')) {
       const sec = getSections(p).find((s) => s.id === key.slice(4));
       if (!sec) return null;
       if (!p.planning.raw) {
-        if (!confirm('2단계 기획이 아직 없습니다. 기획 없이 작성하면 문서 간 수치 일관성이 깨지기 쉽습니다. 계속할까요?')) return null;
+        toast('2단계 기획이 없어 문서 간 수치가 어긋나기 쉽습니다. 기획을 먼저 확정하는 편이 안전합니다.', 'warn');
       }
       return buildSectionPrompt(p, sec);
     }
     if (key === 'review') {
       const secs = getSections(p);
-      if (!secs.some((s) => p.sections[s.id] && p.sections[s.id].content)) { alert('3단계에서 섹션을 먼저 작성하세요.'); return null; }
+      if (!secs.some((s) => p.sections[s.id] && p.sections[s.id].content)) { toast('4단계에서 섹션을 먼저 작성하세요.', 'warn'); return null; }
       return buildReviewPrompt(p);
     }
     if (key === 'deck') {
-      if (!Object.values(p.sections || {}).some((s) => s && s.content)) { alert('3단계 사업계획서를 먼저 작성하세요.'); return null; }
+      if (!Object.values(p.sections || {}).some((s) => s && s.content)) { toast('4단계 사업계획서를 먼저 작성하세요.', 'warn'); return null; }
       return buildDeckPrompt(p);
     }
     return null;
@@ -476,26 +564,26 @@
 
   function savePaste(key, text) {
     const p = cur();
-    if (!text.trim()) { alert('붙여넣은 내용이 없습니다.'); return; }
+    if (!text.trim()) { toast('붙여넣은 내용이 없습니다.', 'warn'); return; }
 
     if (key === 'announce') {
       const json = extractJson(text);
-      if (!json || typeof json !== 'object' || Array.isArray(json)) { alert('JSON을 찾지 못했습니다. Claude 응답의 ```json 블록 전체를 붙여넣어 주세요.'); return; }
+      if (!json || typeof json !== 'object' || Array.isArray(json)) { toast('JSON을 찾지 못했습니다. Claude 응답의 ```json 코드블록을 통째로 붙여넣어 주세요.', 'error'); return; }
       p.announcement.analysis = json;
       if (json.pageLimit && Number(json.pageLimit)) p.pageLimitOverride = Number(json.pageLimit);
     } else if (key === 'idea') {
       const json = extractJson(text);
       const arr = Array.isArray(json) ? json : (json && Array.isArray(json.ideas) ? json.ideas : null);
-      if (!arr || !arr.length) { alert('아이템 JSON 배열을 찾지 못했습니다.'); return; }
+      if (!arr || !arr.length) { toast('아이템 목록(JSON 배열)을 찾지 못했습니다. 응답 전체를 붙여넣었는지 확인해 주세요.', 'error'); return; }
       p.ideas = arr;
       p.selectedIdeaIndex = -1;
     } else if (key === 'plan') {
       p.planning = { raw: text.trim() };
-      if (!/\[P\d/.test(text)) alert('경고: [P1]~[P10] 태그가 보이지 않습니다. 저장은 되었지만, 태그가 있어야 항목별로 정리됩니다.');
+      if (!/\[P\d/.test(text)) toast('저장했습니다. 다만 [P1]~[P11] 태그가 없어 항목별로 정리되지 않습니다.', 'warn');
     } else if (key === 'poc') {
       const json = extractJson(text);
       if (!json || typeof json !== 'object' || Array.isArray(json) || !Array.isArray(json.metrics)) {
-        alert('PoC JSON({purpose, hypothesis, metrics:[...], ...})을 찾지 못했습니다.'); return;
+        toast('PoC 설계(JSON)를 찾지 못했습니다. metrics 항목이 포함된 응답 전체를 붙여넣어 주세요.', 'error'); return;
       }
       p.poc = json;
     } else if (key.startsWith('sec_')) {
@@ -504,7 +592,7 @@
       p.review = { content: text.trim(), at: Date.now() };
     } else if (key === 'deck') {
       const json = extractJson(text);
-      if (!json || !Array.isArray(json.slides)) { alert('Deck JSON({title, slides:[...]})을 찾지 못했습니다.'); return; }
+      if (!json || !Array.isArray(json.slides)) { toast('Deck 설계(JSON)를 찾지 못했습니다. slides 항목이 포함된 응답 전체를 붙여넣어 주세요.', 'error'); return; }
       p.deck = json;
     }
     save();
@@ -527,10 +615,10 @@
       case 'ideaMode': ui.ideaMode = el.getAttribute('data-mode'); render(); break;
       case 'copyPocMd':
         if (p.poc) {
-          navigator.clipboard.writeText(pocToMarkdown(p.poc)).then(
-            () => flash(el, '✓ 복사됨'),
-            () => alert('클립보드 복사 실패')
-          );
+          copyText(pocToMarkdown(p.poc)).then((ok) => {
+            if (ok) { flash(el, '✓ 복사됨'); toast('PoC 계획을 복사했습니다.', 'ok'); }
+            else toast('복사가 차단되었습니다. 아래 캔버스의 표를 직접 선택해 복사해 주세요.', 'error');
+          });
         }
         break;
       case 'pickSection': ui.activeSectionId = el.getAttribute('data-sec'); render(); break;
@@ -542,10 +630,14 @@
       }
       case 'copyPrompt': {
         const key = el.getAttribute('data-key');
-        navigator.clipboard.writeText(ui.prompts[key] || '').then(
-          () => { el.textContent = '✓ 복사됨'; setTimeout(render, 1200); },
-          () => alert('클립보드 복사 실패 — 텍스트 영역에서 직접 복사해 주세요.')
-        );
+        copyText(ui.prompts[key] || '').then((ok) => {
+          if (ok) { el.textContent = '✓ 복사됨'; toast('프롬프트를 복사했습니다. Claude에 붙여넣으세요.', 'ok'); setTimeout(render, 1200); }
+          else {
+            const ta = document.getElementById('prompt_' + key);
+            if (ta) { ta.focus(); ta.select(); }
+            toast('복사가 차단되었습니다. 프롬프트 전체를 선택해 두었으니 Ctrl+C(Mac은 ⌘C)로 복사해 주세요.', 'error');
+          }
+        });
         break;
       }
       case 'savePaste': {
@@ -560,30 +652,52 @@
         break;
       }
       case 'clearAnnRaw':
-        if (confirm('공고문 원문과 파일 목록을 비울까요?')) {
-          p.announcement.rawText = '';
-          p.announcement.files = [];
-          save(); render();
-        }
+        confirmDialog('공고문 원문과 파일 목록을 모두 비웁니다.', { title: '공고문 비우기', okText: '비우기', danger: true })
+          .then((ok) => {
+            if (!ok) return;
+            p.announcement.rawText = '';
+            p.announcement.files = [];
+            save(); render();
+            toast('공고문을 비웠습니다.', 'ok');
+          });
         break;
       case 'pickFiles': {
         const input = document.getElementById('annFiles');
         if (input) input.click();
         break;
       }
-      case 'exportDocx': exportDocx(p).catch((e) => alert('DOCX 생성 실패: ' + e.message)); break;
-      case 'exportPdf': exportPdf(p); break;
-      case 'exportPptx': exportPptx(p); break;
-      case 'exportJson': exportProjectJson(p); break;
+      case 'exportDocx':
+        exportDocx(p).then(() => toast('DOCX를 내려받았습니다.', 'ok'))
+          .catch((e) => toast('DOCX 생성 실패: ' + e.message, 'error'));
+        break;
+      case 'exportPdf': {
+        const how = exportPdf(p);
+        if (how === 'window') toast('새 창에서 인쇄 대화상자를 엽니다. "PDF로 저장"을 선택하세요.', 'ok', 6000);
+        else if (how === 'iframe') toast('인쇄 대화상자를 엽니다. 열리지 않으면 DOCX를 내려받아 워드에서 PDF로 저장해 주세요.', 'warn', 8000);
+        else toast('이 환경에서는 인쇄가 막혀 있습니다. DOCX를 내려받아 워드나 한글에서 PDF로 저장해 주세요.', 'error');
+        break;
+      }
+      case 'exportPptx':
+        if (exportPptx(p)) toast('PPTX를 내려받았습니다.', 'ok');
+        else toast('IR Deck 데이터가 없습니다. 6단계에서 Deck 결과를 먼저 저장해 주세요.', 'warn');
+        break;
+      case 'exportJson': exportProjectJson(p); toast('프로젝트 백업을 내려받았습니다.', 'ok'); break;
       case 'importJson': document.getElementById('importFile').click(); break;
       case 'copyHwp':
         copyHwpHtml(p).then((ok) => {
-          if (ok) alert('서식 있는 본문이 복사되었습니다.\n한글(HWP)을 열고 붙여넣기(Ctrl+V) 하세요.');
-          else alert('복사에 실패했습니다. DOCX→HWP 변환 안내를 이용해 주세요.');
+          if (ok) toast('서식 있는 본문을 복사했습니다. 한글(HWP)을 열고 붙여넣기(Ctrl+V) 하세요.', 'ok', 6000);
+          else toast('복사가 차단되었습니다. DOCX를 내려받아 한글에서 여는 방법을 이용해 주세요.', 'error');
         });
         break;
       case 'hwpGuide':
-        alert('HWP 변환 방법:\n\n1) 여기서 DOCX를 다운로드\n2) 한컴오피스 한글(2014 이상)에서 그 DOCX 파일을 직접 열기\n3) 메뉴 → 다른 이름으로 저장 → 파일 형식 "한글 문서(*.hwp)" 선택\n\n서식(개조식 계층, 표)이 유지됩니다.');
+        dialog({
+          title: 'DOCX를 HWP로 바꾸는 방법',
+          message: '1) 이 화면에서 DOCX를 내려받습니다.\n' +
+                   '2) 한컴오피스 한글(2014 이상)에서 그 DOCX 파일을 그대로 엽니다.\n' +
+                   '3) 다른 이름으로 저장 → 파일 형식을 "한글 문서(*.hwp)"로 선택합니다.\n\n' +
+                   '개조식 계층과 표 서식이 유지됩니다.',
+          okText: '알겠습니다', cancelText: '닫기'
+        });
         break;
       case 'togglePreview': {
         const box = document.getElementById('fullPreview');
@@ -646,8 +760,12 @@
     render();
     const failed = p.announcement.files.filter((x) => x.error);
     if (failed.length && ok === 0) {
-      alert('파일에서 텍스트를 읽지 못했습니다.\n\n' + failed.map((f) => `· ${f.name}: ${f.error}`).join('\n') +
-        '\n\n한글에서 파일을 열어 "다른 이름으로 저장"으로 다시 저장하거나, 텍스트를 직접 복사해 붙여넣어 주세요.');
+      dialog({
+        title: '파일에서 텍스트를 읽지 못했습니다',
+        message: failed.map((f) => `· ${f.name}: ${f.error}`).join('\n') +
+          '\n\n한글이나 워드에서 파일을 열어 다른 이름으로 다시 저장한 뒤 올리거나,\n본문을 복사해 아래 원문 칸에 직접 붙여넣어 주세요.',
+        okText: '알겠습니다', cancelText: '닫기'
+      });
     }
   }
 
@@ -676,8 +794,12 @@
     sel.innerHTML = Object.values(state.projects)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map((pr) => `<option value="${pr.id}" ${pr.id === state.currentId ? 'selected' : ''}>${esc2(pr.name)}</option>`).join('');
-    // 본문
-    document.getElementById('main').innerHTML = (RENDERERS[ui.step] || renderSetup)(p);
+    // 본문 (저장소가 막힌 환경에서는 모든 단계 위에 경고를 띄운다)
+    const banner = storageBlocked
+      ? '<div class="alert warn"><b>브라우저 저장소가 막혀 있습니다.</b> 새로고침하면 작업 내용이 사라집니다. ' +
+        '<b>내보내기 → 프로젝트 백업</b>으로 수시로 파일에 저장하거나, 이 도구를 파일로 내려받아 여세요.</div>'
+      : '';
+    document.getElementById('main').innerHTML = banner + (RENDERERS[ui.step] || renderSetup)(p);
   }
 
   /* ───────── 이벤트 바인딩 ───────── */
@@ -707,21 +829,28 @@
     });
 
     document.getElementById('btnNewProject').addEventListener('click', () => {
-      const name = prompt('새 프로젝트 이름:', '새 프로젝트');
-      if (name === null) return;
-      newProject(name || '새 프로젝트');
-      ui.step = 'setup'; ui.prompts = {};
-      save(); render();
+      promptDialog('새 프로젝트 이름', '새 프로젝트', { okText: '만들기' }).then((name) => {
+        if (name === null) return;
+        newProject(name);
+        ui.step = 'setup'; ui.prompts = {}; ui.activeSectionId = null;
+        save(); render();
+        toast('새 프로젝트를 만들었습니다.', 'ok');
+      });
     });
 
     document.getElementById('btnDeleteProject').addEventListener('click', () => {
       const p = cur();
-      if (!confirm(`"${p.name}" 프로젝트를 삭제할까요? 되돌릴 수 없습니다. (백업을 원하면 내보내기 → 프로젝트 백업)`)) return;
-      delete state.projects[state.currentId];
-      state.currentId = Object.keys(state.projects)[0] || null;
-      if (!state.currentId) newProject('내 첫 프로젝트');
-      ui.step = 'setup'; ui.prompts = {};
-      save(); render();
+      confirmDialog(`"${p.name}" 프로젝트를 삭제합니다. 되돌릴 수 없습니다.
+백업이 필요하면 먼저 내보내기 → 프로젝트 백업을 이용하세요.`,
+        { title: '프로젝트 삭제', okText: '삭제', danger: true }).then((ok) => {
+        if (!ok) return;
+        delete state.projects[state.currentId];
+        state.currentId = Object.keys(state.projects)[0] || null;
+        if (!state.currentId) newProject('내 첫 프로젝트');
+        ui.step = 'setup'; ui.prompts = {}; ui.activeSectionId = null;
+        save(); render();
+        toast('프로젝트를 삭제했습니다.', 'ok');
+      });
     });
 
     // 공고문 파일: 선택 및 끌어다 놓기
@@ -766,7 +895,8 @@
             state.projects[proj.id] = proj;
             state.currentId = proj.id;
             save(); render();
-          } catch (err) { alert('백업 파일을 읽을 수 없습니다: ' + err.message); }
+            toast('백업을 불러왔습니다: ' + proj.name, 'ok');
+          } catch (err) { toast('백업 파일을 읽을 수 없습니다: ' + err.message, 'error'); }
         };
         reader.readAsText(file);
         e.target.value = '';

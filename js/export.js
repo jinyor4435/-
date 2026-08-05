@@ -126,14 +126,46 @@ const DOC_CSS = `
 
 /* ─────────────── PDF (인쇄 대화상자) ─────────────── */
 
+/**
+ * 인쇄 대화상자를 띄운다. 새 창이 막히면 숨은 프레임으로 인쇄를 시도한다.
+ * 반환: 'window' | 'iframe' | false (둘 다 막힌 경우)
+ */
 function exportPdf(project) {
   const html = buildPlanHtml(project);
-  const w = window.open('', '_blank');
-  if (!w) { alert('팝업이 차단되었습니다. 이 사이트의 팝업을 허용해 주세요.'); return; }
-  w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8">
-    <title>사업계획서 PDF</title><style>${DOC_CSS}</style></head><body>${html}
-    <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script></body></html>`);
-  w.document.close();
+  const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
+    <title>사업계획서</title><style>${DOC_CSS}</style></head><body>${html}</body></html>`;
+
+  try {
+    const w = window.open('', '_blank');
+    if (w && w.document) {
+      w.document.write(doc);
+      w.document.close();
+      setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* 사용자가 직접 인쇄 */ } }, 400);
+      return 'window';
+    }
+  } catch (e) { /* 아래 대체 경로 */ }
+
+  // 새 창이 막힌 환경(내장 프레임 등): 숨은 프레임에서 인쇄를 시도한다
+  try {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+    document.body.appendChild(frame);
+    const fdoc = frame.contentDocument;
+    fdoc.open();
+    fdoc.write(doc);
+    fdoc.close();
+    setTimeout(() => {
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } catch (e) { /* 인쇄도 막힌 환경 */ }
+      setTimeout(() => frame.remove(), 60000);
+    }, 400);
+    return 'iframe';
+  } catch (e) {
+    return false;
+  }
 }
 
 /* ─────────────── DOCX ─────────────── */
@@ -215,11 +247,11 @@ async function exportDocx(project) {
 
 const DECK_COLORS = { navy: '1A3A6B', accent: '2E6BD6', gray: '555555', light: 'F4F6FA' };
 
+/** 성공하면 true, Deck 데이터가 없으면 false */
 function exportPptx(project) {
   const deck = project.deck;
   if (!deck || !Array.isArray(deck.slides) || !deck.slides.length) {
-    alert('IR Deck 데이터가 없습니다. 5단계에서 Deck 결과를 먼저 저장해 주세요.');
-    return;
+    return false;
   }
   const pptx = new window.PptxGenJS();
   pptx.defineLayout({ name: 'WIDE', width: 13.33, height: 7.5 });
@@ -261,6 +293,7 @@ function exportPptx(project) {
   });
 
   pptx.writeFile({ fileName: sanitizeFilename(deck.title || project.name || 'IR_Deck') + '_IR_Deck.pptx' });
+  return true;
 }
 
 /* ─────────────── HWP 호환 ─────────────── */
