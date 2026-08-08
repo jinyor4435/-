@@ -279,3 +279,20 @@ details.collapse .inner { padding: 0 14px 14px; }
   .step-list { display: flex; overflow-x: auto; }
   .type-grid, .field-grid, .export-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 자동 생성 (스트리밍 출력) ── */
+.stream-wrap { border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; margin: 10px 0 12px; overflow: hidden; }
+.stream-wrap.running { border-color: #7aa7ff; box-shadow: 0 0 0 3px rgba(122, 167, 255, .15); }
+.stream-wrap.error { border-color: #e0a3a3; }
+.stream-head { padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--navy); background: #eef3fb; border-bottom: 1px solid var(--line); }
+.stream-wrap.running .stream-head::after { content: ' ●'; animation: streamPulse 1.1s infinite; color: #3b6fd4; }
+@keyframes streamPulse { 0%, 100% { opacity: .2 } 50% { opacity: 1 } }
+.stream-out {
+  margin: 0; padding: 12px 14px; max-height: 420px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.65; color: #1d2735;
+}
+.stream-wrap .btn-row { padding: 0 12px 12px; }
+.stream-wrap .alert { margin: 0 12px 12px; }
+details.collapse.manual summary { color: #6b7684; font-weight: 500; font-size: 13px; }

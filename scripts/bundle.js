@@ -32,6 +32,7 @@ const scripts = [
   'js/programs.js',
   'js/prompts.js',
   'js/hwpx.js',
+  'js/llm.js',
   'js/export.js',
   'js/app.js'
 ].map((f) => `<script>\n/* ── ${f} ── */\n${sanitize(read(f))}\n</script>`).join('\n');
@@ -50,7 +51,7 @@ const bodyMarkup = `
   <nav id="sidebar">
     <div class="step-list" id="stepList"></div>
     <div class="sidebar-footer">
-      <p>API 키 불필요 · 데이터는 이 브라우저에만 저장</p>
+      <p>데이터는 이 브라우저에만 저장 · API 키를 넣으면 자동 생성</p>
     </div>
   </nav>
   <main id="main"></main>

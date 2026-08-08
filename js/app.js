@@ -19,7 +19,7 @@
   ];
 
   let state = { projects: {}, currentId: null };
-  const ui = { step: 'setup', activeSectionId: null, ideaFields: ['ai'], ideaMode: 'new', prompts: {} };
+  const ui = { step: 'setup', activeSectionId: null, ideaFields: ['ai'], ideaMode: 'new', prompts: {}, run: null, abort: null, batch: null };
 
   /* ───────── 저장/로드 ───────── */
 
@@ -246,6 +246,73 @@
       <div class="btn-row"><button class="btn" data-act="savePaste" data-key="${key}">💾 응답 저장 · 파싱</button></div>`;
   }
 
+  /**
+   * 생성 블록 — API 키가 있으면 버튼 한 번으로 결과만 흘려주고,
+   * 없으면 기존 복사·붙여넣기(수동) 흐름을 그대로 보여준다.
+   */
+  function genBlock(key, label, placeholder) {
+    const manual = promptBlock(key, null, (label || '프롬프트') + ' 프롬프트 생성') + pasteBlock(key, placeholder);
+
+    if (!LLM.ready()) {
+      return `<div class="alert info">🤖 <b>자동 생성</b>을 쓰려면 <b>설정</b> 단계에서 Claude API 키를 한 번만 넣으면 됩니다.
+        그러면 프롬프트를 복사해 붙여넣을 필요 없이 <b>결과만</b> 이 화면에 나옵니다.
+        <button class="btn secondary small" data-act="goStep" data-step="setup">설정으로 이동</button></div>${manual}`;
+    }
+
+    const run = ui.run && ui.run.key === key ? ui.run : null;
+    const busy = !!run && run.status === 'running';
+    const head = busy
+      ? (run.thinking ? '🧠 심사 기준에 맞춰 구상하는 중…' : '✍️ 작성 중…')
+      : (run && run.status === 'error' ? '⚠ 생성이 끝나지 못했습니다' : '✅ 생성 결과');
+    const streamPanel = run ? `
+      <div class="stream-wrap ${esc2(run.status)}">
+        <div class="stream-head" id="streamhead_${key}">${head}</div>
+        <pre class="stream-out" id="stream_${key}">${esc2(run.text || '')}</pre>
+        ${run.status === 'error' && run.error ? `<div class="alert error">${esc2(run.error).replace(/\n/g, '<br>')}</div>` : ''}
+        ${!busy && run.text ? `<div class="btn-row">
+          <button class="btn secondary small" data-act="useRun" data-key="${key}">이 결과 그대로 저장</button>
+          <button class="btn secondary small" data-act="copyRun" data-key="${key}">📋 결과 복사</button>
+        </div>` : ''}
+      </div>` : '';
+
+    return `
+      <div class="btn-row">
+        <button class="btn ${busy ? 'secondary' : ''}" data-act="autoGen" data-key="${key}" ${busy ? 'disabled' : ''}>${busy ? '⏳ 생성 중…' : '🤖 ' + esc2(label || '자동 생성')}</button>
+        ${busy ? '<button class="btn secondary" data-act="stopGen">■ 중단</button>' : ''}
+      </div>
+      ${streamPanel}
+      <details class="collapse manual"><summary>수동 모드 — 프롬프트를 복사해 Claude 앱에 붙여넣기</summary><div class="inner">${manual}</div></details>`;
+  }
+
+  /* ───────── 자동 생성 설정 ───────── */
+
+  function renderLlmCard() {
+    const s = LLM.get();
+    const ready = LLM.ready();
+    const opts = LLM.MODELS.map((m) => `<option value="${m.id}" ${s.model === m.id ? 'selected' : ''}>${esc2(m.name)} — ${esc2(m.hint)}</option>`).join('');
+    return `
+      <div class="card">
+        <h3>🤖 자동 생성 <span class="hint" style="display:inline">— 프롬프트 붙여넣기 없이, 결과만 받아 보기</span></h3>
+        ${ready
+          ? `<div class="alert ok">자동 생성이 켜져 있습니다 (키 ${esc2(LLM.maskKey(s.apiKey))}). 각 단계에서 <b>🤖 버튼 한 번</b>이면 앱이 알아서 최적 프롬프트를 만들어 실행하고 결과만 보여줍니다.</div>`
+          : `<div class="alert info">Claude API 키를 넣으면 모든 단계가 <b>버튼 한 번</b>으로 진행됩니다. 넣지 않아도 기존처럼 프롬프트를 복사해 쓰는 수동 모드로 쓸 수 있습니다.</div>`}
+        <div class="form-grid">
+          <label>API 키</label>
+          <input type="password" id="llmKey" value="${esc2(s.apiKey || '')}" placeholder="sk-ant-... (console.anthropic.com에서 발급)" autocomplete="off" spellcheck="false">
+          <label>모델</label>
+          <select id="llmModel">${opts}</select>
+        </div>
+        <div class="btn-row">
+          <button class="btn" data-act="saveLlm">저장 · 연결 테스트</button>
+          <button class="btn secondary" data-act="toggleKeyView">키 보기/숨기기</button>
+          ${ready ? '<button class="btn secondary" data-act="clearLlm">키 삭제</button>' : ''}
+        </div>
+        <p class="hint">키는 <b>이 브라우저에만</b> 저장되고, 요청은 앱에서 Anthropic으로 바로 나갑니다 (중계 서버 없음). 사용량만큼 API 요금이 청구됩니다.</p>
+        <p class="hint">⚠ 게시된 <b>웹 링크(아티팩트)</b> 안에서는 보안 정책상 외부 통신이 막혀 자동 생성이 동작하지 않습니다. 아래 버튼으로 이 앱을 파일로 저장한 뒤, 그 파일을 브라우저로 열면 자동 생성이 동작합니다.</p>
+        <div class="btn-row"><button class="btn secondary" data-act="saveSelf">⬇ 이 앱을 파일로 저장 (자동 생성용)</button></div>
+      </div>`;
+  }
+
   /* ───────── 단계별 렌더 ───────── */
 
   function renderSetup(p) {
@@ -272,7 +339,7 @@
           <label>기타</label><input type="text" data-company="notes" value="${esc2(c.notes || '')}" placeholder="자유 기재">
         </div>
       </div>
-      <div class="alert info">이 도구는 API 키 없이 동작합니다. 각 단계에서 <b>프롬프트 생성 → Claude에 붙여넣기 → 응답을 앱에 되붙이기</b> 흐름으로 진행되며, 모든 데이터는 이 브라우저에만 저장됩니다.</div>
+      ${renderLlmCard()}
       <div class="btn-row"><button class="btn big" data-act="goStep" data-step="announce">다음: 공고문 분석 →</button></div>`;
   }
 
@@ -350,9 +417,9 @@
         <h3 style="margin-top:14px">양식 원문</h3>
         <textarea id="formRaw" placeholder="양식 파일을 올리면 여기 텍스트가 쌓입니다. 직접 붙여넣어도 됩니다.">${esc2(fm.rawText || '')}</textarea>
         <div class="btn-row">${(fm.rawText || '').trim() ? '<button class="btn secondary" data-act="clearRaw" data-target="form">비우기</button>' : ''}</div>
-        ${promptBlock('form', null, '양식 구조 분석 프롬프트 생성')}
+        ${genBlock('form', '양식 구조 자동 분석')}
       </div>
-      <div class="card"><h3>양식 분석 결과 붙여넣기 (JSON)</h3>${pasteBlock('form')}${formResult}</div>
+      ${formResult ? `<div class="card"><h3>양식 분석 결과</h3>${formResult}</div>` : ''}
 
       <div class="card">
         <h3>② 공고문 <span class="hint" style="display:inline">— 배점·자격·마감·실격 조건을 뽑습니다.</span></h3>
@@ -363,9 +430,9 @@
         <h3 style="margin-top:14px">공고문 원문</h3>
         <textarea id="annRaw" placeholder="공고문 텍스트 전체를 붙여넣으세요">${esc2(a.rawText || '')}</textarea>
         <div class="btn-row">${(a.rawText || '').trim() ? '<button class="btn secondary" data-act="clearRaw" data-target="announcement">비우기</button>' : ''}</div>
-        ${promptBlock('announce', null, '공고 분석 프롬프트 생성')}
+        ${genBlock('announce', '공고문 자동 분석')}
       </div>
-      <div class="card"><h3>공고 분석 결과 붙여넣기 (JSON)</h3>${pasteBlock('announce')}${annResult}</div>
+      ${annResult ? `<div class="card"><h3>공고 분석 결과</h3>${annResult}</div>` : ''}
 
       <div class="btn-row">
         <button class="btn secondary" data-act="goStep" data-step="setup">← 이전</button>
@@ -410,9 +477,8 @@
         ${modePanel}
         <div style="margin-top:12px"><label class="hint">추가 방향성 (선택)</label>
         <input type="text" id="ideaDirection" placeholder="예: 하드웨어 없이 소프트웨어만으로 가능한 것, B2B 위주"></div>
-        ${promptBlock('idea', null, isReframe ? '재정의 프롬프트 생성' : '아이템 발굴 프롬프트 생성')}
+        ${genBlock('idea', isReframe ? '딥테크 재정의안 자동 생성' : '딥테크 아이템 자동 발굴')}
       </div>
-      <div class="card"><h3>Claude 응답 (JSON 배열)</h3>${pasteBlock('idea')}</div>
       ${cards ? `<div class="card"><h3>생성된 아이템 — 클릭해서 1개 선정</h3>${cards}</div>` : ''}
       <div class="btn-row">
         <button class="btn secondary" data-act="goStep" data-step="announce">← 이전</button>
@@ -430,8 +496,7 @@
       <h1 class="step-title">2. 사업 기획 (PSST)</h1>
       <p class="step-desc">선정 아이템의 기획을 확정합니다. 여기서 정한 수치(시장, KPI, 매출, BEP)가 사업계획서와 IR Deck 전체의 <b>단일 진실 공급원</b>이 됩니다 — 문서 간 수치 불일치는 대표적 감점 요인입니다.</p>
       ${hasIdea ? '' : '<div class="alert warn">1단계에서 아이템을 먼저 선정하세요.</div>'}
-      <div class="card"><h3>기획 프롬프트</h3>${promptBlock('plan', null, 'PSST 기획 프롬프트 생성')}</div>
-      <div class="card"><h3>Claude 응답 ([P1]~[P10] 태그 포함 개조식)</h3>${pasteBlock('plan')}</div>
+      <div class="card"><h3>PSST 기획</h3>${genBlock('plan', 'PSST 기획 자동 생성', '기획 본문을 붙여넣으세요 ([P1]~[P11] 태그 포함)')}</div>
       ${view ? `<div class="card"><h3>확정된 기획</h3>${view}</div>` : ''}
       <div class="btn-row">
         <button class="btn secondary" data-act="goStep" data-step="idea">← 이전</button>
@@ -456,8 +521,7 @@
       <h1 class="step-title">3. PoC 검증 설계</h1>
       <p class="step-desc">심사위원이 가장 싫어하는 문장은 "검증하겠습니다"(숫자·방법 없음)입니다. 가설 1개 → 환경·방법 → 지표(정의·단위·측정법·산출식) → 숫자 임계값(Go/No-Go) → Plan B 구조의 검증계획을 설계합니다.</p>
       ${p.planning && p.planning.raw ? '' : '<div class="alert warn">2단계 기획을 먼저 완료하면 PoC가 기획 수치와 일치하게 설계됩니다.</div>'}
-      <div class="card"><h3>PoC 설계 프롬프트</h3>${promptBlock('poc', null, 'PoC 설계 프롬프트 생성')}</div>
-      <div class="card"><h3>Claude 응답 (JSON)</h3>${pasteBlock('poc')}</div>
+      <div class="card"><h3>PoC 검증 설계</h3>${genBlock('poc', 'PoC 검증계획 자동 설계')}</div>
       ${canvas}
       <div class="btn-row">
         <button class="btn secondary" data-act="goStep" data-step="plan">← 이전</button>
@@ -497,10 +561,8 @@
         ${active.source === 'form' ? '<div class="alert info" style="margin-top:0"><b>양식에 적힌 작성 안내문</b><br>' + esc2(active.guide || '(안내문 없음)').replace(/\n/g, '<br>') + '</div>' : `<p class="hint">${esc2(active.guide)}</p>`}
         <p class="hint">${esc2(limitInfo || '권장 약 ' + active.pages + '페이지')} ${charNote}</p>
         ${tableReq}
-        ${promptBlock('sec_' + active.id, null, '이 섹션 작성 프롬프트 생성')}
-        <h3 style="margin-top:16px">Claude 응답 (개조식 본문)</h3>
-        ${pasteBlock('sec_' + active.id, '섹션 본문을 붙여넣으세요 (□/○/- 개조식, 표는 마크다운)')}
-        ${cont ? `<h3>미리보기</h3><div class="preview">${blocksToHtml(parseContent(cont))}</div>` : ''}
+        ${genBlock('sec_' + active.id, '이 섹션 자동 작성', '섹션 본문을 붙여넣으세요 (□/○/- 개조식, 표는 마크다운)')}
+        ${cont ? `<h3 style="margin-top:16px">저장된 본문</h3><div class="preview">${blocksToHtml(parseContent(cont))}</div>` : ''}
       </div>` : '';
     return `
       <h1 class="step-title">4. 사업계획서 작성</h1>
@@ -509,6 +571,10 @@
         <h3>진행 상황 ${doneCount}/${secs.length}</h3>
         <div class="progress-track"><div class="progress-fill" style="width:${secs.length ? Math.round(doneCount / secs.length * 100) : 0}%"></div></div>
         ${list}
+        ${LLM.ready() ? `<div class="btn-row">
+          ${ui.batch ? `<button class="btn secondary" data-act="stopGen">■ 전체 작성 중단 (${ui.batch.done}/${ui.batch.total})</button>`
+            : `<button class="btn" data-act="autoAll">🚀 미작성 ${secs.length - doneCount}개 섹션 전부 자동 작성</button>`}
+        </div>${ui.batch ? `<p class="hint">${esc2(ui.batch.label || '')}</p>` : '<p class="hint">앞 섹션부터 차례로 쓰며, 먼저 쓴 내용을 다음 섹션 프롬프트에 넣어 수치 일관성을 유지합니다.</p>'}` : ''}
       </div>
       ${activePanel}
       ${doneCount === secs.length && secs.length ? '<div class="alert ok">전 섹션 작성 완료. 5단계 모의심사로 검증하세요.</div>' : ''}
@@ -523,8 +589,7 @@
     return `
       <h1 class="step-title">5. 모의심사</h1>
       <p class="step-desc">제출 전, 심사위원 페르소나가 실제 심사처럼 채점합니다 — 섹션별 점수, 감점 요인 전수 점검, 문서 간 수치 불일치, 【확인】 마커 목록, 점수를 가장 올릴 수정 3가지.</p>
-      <div class="card"><h3>모의심사 프롬프트</h3>${promptBlock('review', null, '모의심사 프롬프트 생성')}</div>
-      <div class="card"><h3>심사 결과 붙여넣기</h3>${pasteBlock('review')}</div>
+      <div class="card"><h3>모의심사 실행</h3>${genBlock('review', '모의심사 자동 실행', '심사 결과를 붙여넣으세요')}</div>
       ${p.review && p.review.content ? `<div class="card"><h3>심사 결과</h3><div class="review-out">${esc2(p.review.content)}</div></div>
       <div class="alert warn">지적된 사항을 3단계로 돌아가 수정한 뒤, 모의심사를 다시 돌리는 것을 권장합니다 (합격선 통과 판정까지 반복).</div>` : ''}
       <div class="btn-row">
@@ -545,8 +610,7 @@
     return `
       <h1 class="step-title">6. IR Deck (대면평가 발표자료)</h1>
       <p class="step-desc">확정 사업계획서와 수치가 일치하는 발표자료를 설계합니다. 슬라이드당 메시지 1개, 발표 대본 포함.</p>
-      <div class="card"><h3>Deck 설계 프롬프트</h3>${promptBlock('deck', null, 'IR Deck 프롬프트 생성')}</div>
-      <div class="card"><h3>Claude 응답 (JSON)</h3>${pasteBlock('deck')}</div>
+      <div class="card"><h3>IR Deck 설계</h3>${genBlock('deck', 'IR Deck 자동 설계')}</div>
       ${slides ? `<div class="card"><h3>${esc2(deck.title || '')} — ${deck.slides.length}장</h3>${slides}
         <div class="btn-row"><button class="btn big" data-act="exportPptx">⬇ PPTX 다운로드</button></div></div>` : ''}
       <div class="btn-row">
@@ -668,6 +732,7 @@
 
   /** JSON을 못 찾았을 때, 무엇이 문제인지 짚어준다 */
   function explainJsonFailure(text, needLabel) {
+    if (quietPaste) return;   // 자동 재시도가 뒤따르므로 사용자를 놀라게 하지 않는다
     if (looksLikePrompt(text)) {
       dialog({
         title: '프롬프트를 그대로 붙여넣으신 것 같습니다',
@@ -689,20 +754,20 @@
 
   function savePaste(key, text) {
     const p = cur();
-    if (!text.trim()) { toast('붙여넣은 내용이 없습니다.', 'warn'); return; }
+    if (!text.trim()) { toast('붙여넣은 내용이 없습니다.', 'warn'); return false; }
 
     // 프롬프트를 그대로 되붙이면 자리표시자가 저장되므로 먼저 막는다
-    if (looksLikePrompt(text)) { explainJsonFailure(text); return; }
+    if (looksLikePrompt(text)) { explainJsonFailure(text); return false; }
 
     if (key === 'form') {
       const json = extractJson(text, (v) => v && !Array.isArray(v) && Array.isArray(v.sections) && v.sections.length);
-      if (!json || !Array.isArray(json.sections) || !json.sections.length) { explainJsonFailure(text, 'sections'); return; }
+      if (!json || !Array.isArray(json.sections) || !json.sections.length) { explainJsonFailure(text, 'sections'); return false; }
       p.form.analysis = json;
       ui.activeSectionId = null;   // 목차가 바뀌므로 선택을 초기화한다
       toast(`양식 항목 ${json.sections.length}개를 인식했습니다. 4단계 작성 목차가 이 양식으로 바뀝니다.`, 'ok', 7000);
     } else if (key === 'announce') {
       const json = extractJson(text, (v) => v && !Array.isArray(v) && (v.sections || v.title || v.agency));
-      if (!json || Array.isArray(json)) { explainJsonFailure(text, 'sections'); return; }
+      if (!json || Array.isArray(json)) { explainJsonFailure(text, 'sections'); return false; }
       p.announcement.analysis = json;
       if (json.pageLimit && Number(json.pageLimit)) p.pageLimitOverride = Number(json.pageLimit);
     } else if (key === 'idea') {
@@ -712,7 +777,7 @@
         return !!(a && a.length && a[0] && a[0].title);
       });
       const arr = pickIdeas(json);
-      if (!arr || !arr.length) { explainJsonFailure(text, 'title'); return; }
+      if (!arr || !arr.length) { explainJsonFailure(text, 'title'); return false; }
       p.ideas = arr;
       p.selectedIdeaIndex = -1;
     } else if (key === 'plan') {
@@ -720,10 +785,10 @@
       if (!/\[P\d/.test(text)) toast('저장했습니다. 다만 [P1]~[P11] 태그가 없어 항목별로 정리되지 않습니다.', 'warn');
     } else if (key === 'poc') {
       const json = extractJson(text, (v) => v && !Array.isArray(v) && Array.isArray(v.metrics) && v.metrics.length);
-      if (!json || Array.isArray(json)) { explainJsonFailure(text, 'metrics'); return; }
+      if (!json || Array.isArray(json)) { explainJsonFailure(text, 'metrics'); return false; }
       if (!Array.isArray(json.metrics) || !json.metrics.length) {
         toast('JSON은 찾았지만 지표(metrics) 항목이 비어 있습니다. Claude에게 metrics 배열을 채워 다시 출력해 달라고 요청해 보세요.', 'error', 11000);
-        return;
+        return false;
       }
       p.poc = json;
     } else if (key.startsWith('sec_')) {
@@ -732,11 +797,128 @@
       p.review = { content: text.trim(), at: Date.now() };
     } else if (key === 'deck') {
       const json = extractJson(text, (v) => v && Array.isArray(v.slides) && v.slides.length);
-      if (!json || !Array.isArray(json.slides) || !json.slides.length) { explainJsonFailure(text, 'slides'); return; }
+      if (!json || !Array.isArray(json.slides) || !json.slides.length) { explainJsonFailure(text, 'slides'); return false; }
       p.deck = json;
     }
     save();
     render();
+    return true;
+  }
+
+  /* ───────── 자동 생성 실행 ───────── */
+
+  function tokensFor(key) {
+    if (key.indexOf('sec_') === 0) return 20000;
+    return ({ plan: 20000, review: 16000, deck: 16000, form: 12000, announce: 12000, idea: 12000, poc: 12000 })[key] || 12000;
+  }
+
+  const RETRY_SUFFIX = '\n\n[재요청] 직전 출력이 지정 형식과 달라 앱이 읽지 못했습니다. ' +
+    '이번에는 인사말·설명·맺음말 없이 지정된 형식(JSON이면 코드블록 하나)만, 중간에 잘리지 않게 끝까지 출력하세요.';
+
+  let quietPaste = false;   // 자동 재시도 중에는 파싱 실패 안내를 띄우지 않는다
+
+  function streamInto(key, prompt) {
+    ui.run = { key, text: '', status: 'running', thinking: false, error: '' };
+    ui.abort = new AbortController();
+    render();
+    return LLM.stream({
+      prompt,
+      maxTokens: tokensFor(key),
+      signal: ui.abort.signal,
+      onToken: (chunk, full) => {
+        if (!ui.run || ui.run.key !== key) return;
+        ui.run.text = full;
+        const el = document.getElementById('stream_' + key);
+        if (el) { el.textContent = full; el.scrollTop = el.scrollHeight; }
+      },
+      onThinking: (thinking) => {
+        if (!ui.run || ui.run.key !== key) return;
+        ui.run.thinking = thinking;
+        const h = document.getElementById('streamhead_' + key);
+        if (h) h.textContent = thinking ? '🧠 심사 기준에 맞춰 구상하는 중…' : '✍️ 작성 중…';
+      }
+    });
+  }
+
+  /** 프롬프트 생성 → 호출 → 검증·저장까지 한 번에. 형식이 어긋나면 한 번 자동 재시도한다. */
+  async function autoGen(key, opts) {
+    const o = opts || {};
+    const prompt = o.prompt || buildPrompt(key);
+    if (!prompt) return false;
+    ui.prompts[key] = o.prompt ? prompt : ui.prompts[key] || prompt;
+
+    let text;
+    try {
+      text = await streamInto(key, prompt);
+    } catch (e) {
+      const aborted = e && e.name === 'AbortError';
+      if (ui.run && ui.run.key === key) {
+        ui.run.status = 'error';
+        ui.run.error = aborted ? '중단했습니다.' : (e.message || String(e));
+      }
+      render();
+      if (!aborted) toast(e.message || '자동 생성에 실패했습니다.', 'error', 15000);
+      return false;
+    }
+
+    if (ui.run && ui.run.key === key) ui.run.status = 'done';
+    quietPaste = !o.retried;
+    const ok = savePaste(key, text);
+    quietPaste = false;
+    if (ok) { ui.run = null; render(); return true; }
+    if (!o.retried) return autoGen(key, { prompt: prompt + RETRY_SUFFIX, retried: true });
+
+    if (ui.run && ui.run.key === key) {
+      ui.run.status = 'error';
+      ui.run.error = '두 번 시도했지만 응답 형식이 맞지 않아 자동 저장하지 못했습니다. ' +
+        '아래 “이 결과 그대로 저장”을 누르거나, 다시 생성해 보세요.';
+    }
+    render();
+    return false;
+  }
+
+  /** 4단계 — 미작성 섹션을 앞에서부터 차례로 전부 작성한다 */
+  async function autoAllSections() {
+    const p = cur();
+    const todo = getSections(p).filter((s) => !((p.sections[s.id] || {}).content));
+    if (!todo.length) { toast('이미 모든 섹션이 작성되어 있습니다.', 'info'); return; }
+    ui.batch = { total: todo.length, done: 0, label: '' };
+    for (let i = 0; i < todo.length; i++) {
+      if (!ui.batch) break;
+      const sec = todo[i];
+      ui.activeSectionId = sec.id;
+      ui.batch.label = `(${ui.batch.done + 1}/${ui.batch.total}) ${sec.title} 작성 중…`;
+      const ok = await autoGen('sec_' + sec.id);
+      if (!ui.batch) break;
+      if (!ok) { toast(`"${sec.title}"에서 멈췄습니다. 확인 후 이어서 진행해 주세요.`, 'warn', 9000); break; }
+      ui.batch.done++;
+    }
+    const done = ui.batch ? ui.batch.done : 0;
+    ui.batch = null;
+    render();
+    if (done) toast(`${done}개 섹션을 자동 작성했습니다.`, 'ok', 6000);
+  }
+
+  function stopGen() {
+    ui.batch = null;
+    if (ui.abort) { try { ui.abort.abort(); } catch (e) { /* 무시 */ } }
+  }
+
+  function saveLlmSettings() {
+    const keyEl = document.getElementById('llmKey');
+    const modelEl = document.getElementById('llmModel');
+    const apiKey = keyEl ? keyEl.value.trim() : '';
+    const model = modelEl ? modelEl.value : LLM.get().model;
+    if (!apiKey) { toast('API 키를 입력해 주세요. console.anthropic.com → API Keys에서 발급합니다.', 'warn'); return; }
+    LLM.set({ apiKey, model });
+    toast('연결을 확인하는 중…', 'info', 2500);
+    LLM.test(apiKey, model).then(() => {
+      render();
+      toast('연결됐습니다. 이제 각 단계의 🤖 버튼만 누르면 됩니다.', 'ok', 6000);
+    }).catch((e) => {
+      render();
+      toast(e.message || '연결에 실패했습니다.', 'error', 15000);
+    });
   }
 
   function handleAction(el) {
@@ -780,6 +962,44 @@
         });
         break;
       }
+      case 'autoGen': autoGen(el.getAttribute('data-key')); break;
+      case 'autoAll': autoAllSections(); break;
+      case 'stopGen': stopGen(); break;
+      case 'useRun': {
+        const key = el.getAttribute('data-key');
+        if (ui.run && ui.run.key === key && ui.run.text) {
+          if (savePaste(key, ui.run.text)) { ui.run = null; render(); toast('저장했습니다.', 'ok'); }
+        }
+        break;
+      }
+      case 'copyRun': {
+        const text = ui.run ? ui.run.text : '';
+        copyText(text).then((ok) => { if (ok) flash(el, '✓ 복사됨'); else toast('복사가 차단되었습니다. 결과를 직접 선택해 복사해 주세요.', 'error'); });
+        break;
+      }
+      case 'saveLlm': saveLlmSettings(); break;
+      case 'saveSelf': {
+        try {
+          // API 키가 화면에 그려져 있으므로, 본문을 비운 사본을 저장한다
+          const clone = document.documentElement.cloneNode(true);
+          const main = clone.querySelector('#main');
+          if (main) main.innerHTML = '';
+          Array.prototype.forEach.call(clone.querySelectorAll('#toastBox, .modal-back'), (n) => n.remove());
+          const html = '<!doctype html>\n' + clone.outerHTML;
+          downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), '딥테크-사업계획서-생성기.html');
+          toast('앱을 파일로 저장했습니다. 그 파일을 브라우저로 열면 자동 생성까지 동작합니다.', 'ok', 9000);
+        } catch (e) { toast('파일 저장에 실패했습니다: ' + e.message, 'error'); }
+        break;
+      }
+      case 'toggleKeyView': {
+        const k = document.getElementById('llmKey');
+        if (k) k.type = k.type === 'password' ? 'text' : 'password';
+        break;
+      }
+      case 'clearLlm':
+        confirmDialog('저장된 API 키를 이 브라우저에서 지웁니다.', { title: 'API 키 삭제', okText: '삭제', danger: true })
+          .then((ok) => { if (ok) { LLM.clear(); render(); toast('API 키를 삭제했습니다. 수동 모드로 계속 쓸 수 있습니다.', 'ok'); } });
+        break;
       case 'savePaste': {
         const key = el.getAttribute('data-key');
         const ta = document.getElementById('paste_' + key);
@@ -989,6 +1209,7 @@
     document.getElementById('projectSelect').addEventListener('change', (e) => {
       state.currentId = e.target.value;
       ui.step = 'setup'; ui.prompts = {}; ui.activeSectionId = null;
+      ui.run = null; ui.batch = null;
       save(); render();
     });
 
@@ -997,6 +1218,7 @@
         if (name === null) return;
         newProject(name);
         ui.step = 'setup'; ui.prompts = {}; ui.activeSectionId = null;
+      ui.run = null; ui.batch = null;
         save(); render();
         toast('새 프로젝트를 만들었습니다.', 'ok');
       });
@@ -1012,6 +1234,7 @@
         state.currentId = Object.keys(state.projects)[0] || null;
         if (!state.currentId) newProject('내 첫 프로젝트');
         ui.step = 'setup'; ui.prompts = {}; ui.activeSectionId = null;
+      ui.run = null; ui.batch = null;
         save(); render();
         toast('프로젝트를 삭제했습니다.', 'ok');
       });
