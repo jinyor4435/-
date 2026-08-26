@@ -136,9 +136,16 @@ python3 .claude/skills/carousel/scripts/check_carousel.py 초안.md
 - **전문용어로 권위 세우기** — 아는 사람만 읽고 끝난다.
 - **훅과 결론이 따로 논다** — 마지막 장에서 훅의 단어를 그대로 회수하면 완성도가 올라간다.
 
+## 디자인까지 만들 때
+
+카피가 끝난 뒤 Canva로 실제 디자인을 만들 수 있다. **순서가 중요하다 — 카피를 먼저 확정하고, 디자인은 그 카피를 담기만 한다.** Canva의 생성 AI는 넘겨준 문구를 자기 식으로 다시 쓰기 때문에, 생성한 뒤 원본 카피로 덮어쓰는 단계가 반드시 들어간다.
+
+`references/canva-design.md`에 실제로 10장을 만들어보고 정리한 순서가 있다. 디자인을 요청받으면 그 파일을 읽고 따른다.
+
 ## 참고 파일
 
 - `references/hook-patterns.md` — 훅 유형 12가지와 실제 문장 패턴. 훅을 쓸 때마다 읽는다.
 - `references/structures.md` — 골격 변형(리스트형/비포애프터형/오해깨기형/스토리형)과 플랫폼별 길이 기준.
 - `references/example-output.md` — 10장짜리 완성본 하나(슬라이드+캡션+디자인 메모). 출력 형식의 기준이다.
+- `references/canva-design.md` — Canva로 디자인까지 만드는 순서와, 매번 어긋나는 지점 세 가지.
 - `references/before-after.md` — 실패한 카드와 고친 카드의 대조 예시. 고쳐 달라는 요청을 받았을 때 읽는다.
