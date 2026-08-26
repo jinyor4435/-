@@ -14,6 +14,12 @@
 
 `###`로 시작하는 절(캡션·디자인 메모)은 검사 대상이 아니다.
 
+고치기 요청을 받았을 때는 사용자가 붙여넣은 초안을 그대로 넣어도 된다.
+다음 표기를 모두 슬라이드 구분으로 읽는다.
+
+    ## 1 · 훅        ## 슬라이드 1 (표지)      [1장]
+    **1/9**          **슬라이드 3**            3장:
+
 사용법:
     python3 check_carousel.py 초안.md
     python3 check_carousel.py 초안.md --platform threads
@@ -67,30 +73,60 @@ JARGON = {
     "가능합니다": "됩니다",
 }
 
-TRANSITIONS = ("하지만", "그런데", "그러나", "근데", "반대로", "문제는")
+# 실제 뒤집기만 전환으로 센다. "그런데/문제는"은 다음 장으로 넘기는 미끼로도
+# 쓰이므로 여기에 넣으면 전환이 실제보다 앞에 있는 것처럼 잘못 읽힌다.
+TRANSITIONS = ("하지만", "그러나", "반대로", "그런데도")
 SPOILERS = ("정답은", "결론은", "방법은 간단", "핵심은", "답은")
 CTA_WORDS = ("저장", "공유", "팔로우", "댓글", "프로필", "링크", "DM", "구독")
 
 
+# 실제로 붙여넣는 표기를 모두 받는다. 목록 번호("1. 얼굴을 크게")나
+# 라벨("STEP 1")을 슬라이드로 오인하지 않도록 구분자를 요구한다.
+SLIDE_PAT = re.compile(
+    r"""^\s*(?:
+        \#{2,4}\s*(?:슬라이드|카드|포스트|Slide|Post)?\s*(\d{1,2})\s*(?:장|번|[·:.)\-—]|\()
+      | \[\s*(?:슬라이드|카드)?\s*(\d{1,2})\s*(?:장|번)?\s*\]
+      | \*{2}\s*(\d{1,2})\s*/\s*\d{1,2}\s*\*{2}
+      | \*{2}\s*(?:슬라이드|카드|포스트)\s*(\d{1,2})\s*\*{2}
+      | (\d{1,2})\s*장\s*[:：]
+    )""",
+    re.I | re.X,
+)
+
+# 편집용 라벨 줄은 카피가 아니므로 글자 수에서 뺀다
+LABEL_PAT = re.compile(r"^\*{0,2}(메인 카피|서브 카피|본문|하단|라벨|제목|카피)\*{0,2}\s*[:：]?\s*$")
+
+# 캡션·해시태그·디자인 메모 절부터는 슬라이드가 아니다
+TAIL_PAT = re.compile(r"^\s*#{2,4}\s*(캡션|해시태그|디자인|Caption|Hashtag)", re.I)
+
+
 def parse_slides(text):
-    """`## `로 시작하는 슬라이드만 뽑는다. `###` 절부터는 무시한다."""
+    """슬라이드만 뽑는다. 캡션·디자인 메모 절부터는 무시한다."""
     slides = []
     current = None
     for raw in text.splitlines():
         line = raw.rstrip()
-        if re.match(r"^###\s", line):
-            current = None
+        stripped = line.strip()
+        if TAIL_PAT.match(line):
+            break
+        if not stripped or set(stripped) <= set("-—=*"):
             continue
-        m = re.match(r"^##\s+(.*)$", line)
+        m = SLIDE_PAT.match(line)
         if m:
-            current = {"title": m.group(1).strip(), "lines": []}
+            num = next(g for g in m.groups() if g)
+            rest = line[m.end():].strip(" ·:：—-*[]()")
+            # 제목 자리의 라벨(훅, 문제 …)은 본문에서 제외하고, 카피면 살린다
+            title = rest if len(rest) <= 12 else ""
+            current = {"num": int(num), "title": title, "lines": []}
+            if rest and not title:
+                current["lines"].append(rest)
             slides.append(current)
             continue
         if current is None:
             continue
-        if line.strip() in ("", "---"):
+        if LABEL_PAT.match(stripped):
             continue
-        current["lines"].append(line.strip())
+        current["lines"].append(re.sub(r"^[*_>\s]+|[*_]+$", "", stripped))
     return slides
 
 
