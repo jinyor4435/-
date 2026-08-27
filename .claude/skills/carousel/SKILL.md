@@ -142,6 +142,13 @@ python3 .claude/skills/carousel/scripts/check_carousel.py 초안.md
 
 `references/canva-design.md`에 실제로 10장을 만들어보고 정리한 순서가 있다. 디자인을 요청받으면 그 파일을 읽고 따른다.
 
+## 자동화가 필요할 때
+
+같은 룰로 주제만 넣으면 카피와 카드 이미지를 한 번에 뽑는 웹 앱이 이 저장소에 있다 — `carousel.html`.
+반복해서 여러 건을 만들거나 사용자가 직접 돌려보고 싶어 하면 그 쪽을 안내한다.
+프롬프트는 `js/carousel-prompt.js`, 카드 그림은 `js/carousel-render.js`에 있고,
+**룰 문구를 이 스킬에서 고치면 `js/carousel-prompt.js`도 같이 고쳐야 한다.**
+
 ## 참고 파일
 
 - `references/hook-patterns.md` — 훅 유형 12가지와 실제 문장 패턴. 훅을 쓸 때마다 읽는다.

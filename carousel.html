@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>카드뉴스 생성기 — 주제만 넣으면 9장</title>
+<style>
+  :root {
+    --bg:#f4f6fa; --card:#fff; --line:#dde3ec; --text:#1c2333; --muted:#64708a;
+    --navy:#1a3a6b; --accent:#2e6bd6; --ok:#1e9e5a; --warn:#d97706; --danger:#d64545;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body {
+    font-family:'Pretendard','Malgun Gothic','맑은 고딕','Noto Sans KR',system-ui,sans-serif;
+    background:var(--bg); color:var(--text); font-size:15px; line-height:1.6;
+  }
+  header { background:var(--navy); color:#fff; padding:14px 22px; display:flex; gap:14px; align-items:baseline; }
+  header b { font-size:17px; }
+  header span { color:#b9c8e4; font-size:13px; }
+  header a { margin-left:auto; color:#cfe0ff; font-size:13px; }
+  main { max-width:1180px; margin:0 auto; padding:22px; display:grid; grid-template-columns:340px 1fr; gap:22px; align-items:start; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .panel h2 { margin:0 0 4px; font-size:15px; }
+  .panel p.hint { margin:0 0 14px; color:var(--muted); font-size:13px; }
+  label { display:block; font-size:13px; font-weight:600; margin:12px 0 4px; }
+  input[type=text], textarea, select {
+    width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px;
+    font:inherit; font-size:14px; background:#fff; color:inherit;
+  }
+  textarea { resize:vertical; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button {
+    font:inherit; font-weight:600; border-radius:8px; border:1px solid transparent;
+    padding:10px 14px; cursor:pointer;
+  }
+  button.primary { background:var(--accent); color:#fff; width:100%; margin-top:16px; }
+  button.primary:disabled { background:#9db4dc; cursor:not-allowed; }
+  button.ghost { background:#fff; border-color:var(--line); color:var(--text); width:100%; margin-top:8px; }
+  button.mini { padding:4px 10px; font-size:12px; background:#fff; border-color:var(--line); }
+  .status { margin-top:10px; font-size:13px; color:var(--muted); min-height:20px; }
+  details { margin-top:16px; border-top:1px solid var(--line); padding-top:12px; }
+  summary { cursor:pointer; font-size:13px; font-weight:600; }
+  .keyhint { font-size:12px; color:var(--muted); margin-top:6px; }
+  #cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; }
+  .card { margin:0; background:#000; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
+  .card canvas { width:100%; height:auto; display:block; }
+  .card figcaption {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:#fff; padding:7px 10px; font-size:12px; color:var(--muted);
+  }
+  #checks { list-style:none; margin:0; padding:0; font-size:13px; }
+  #checks li { padding:6px 10px; border-radius:6px; margin-bottom:5px; }
+  #checks li.ok { background:#eaf7ef; color:#14683c; }
+  #checks li.warn { background:#fdf3e3; color:#8a5a06; }
+  #checks li.error { background:#fdeaea; color:#9c2b2b; }
+  #meta { color:var(--muted); font-size:13px; margin:0 0 12px; }
+  .bar { display:flex; gap:8px; margin:14px 0; }
+  .bar button { flex:1; }
+</style>
+</head>
+<body>
+<header>
+  <b>카드뉴스 생성기</b>
+  <span>주제 한 줄 → 카피 → 카드 이미지까지</span>
+  <a href="index.html">← 사업계획서 생성기</a>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>무엇에 대해 쓸까요</h2>
+    <p class="hint">주제만 넣어도 됩니다. 나머지는 비워두면 알아서 정합니다.</p>
+
+    <label for="topic">주제 · 제목</label>
+    <input id="topic" type="text" placeholder="예: 프리랜서가 견적 깎아달란 말 들었을 때">
+
+    <label for="audience">읽는 사람 (선택)</label>
+    <input id="audience" type="text" placeholder="예: 막 시작한 20대 후반 프리랜서">
+
+    <label for="message">남길 메시지 하나 (선택)</label>
+    <input id="message" type="text" placeholder="비워두면 주제에서 뽑습니다">
+
+    <div class="row">
+      <div>
+        <label for="platform">플랫폼</label>
+        <select id="platform">
+          <option value="instagram">인스타 9장</option>
+          <option value="threads">스레드 6개</option>
+          <option value="linkedin">링크드인 10장</option>
+        </select>
+      </div>
+      <div>
+        <label for="density">본문 분량</label>
+        <select id="density">
+          <option value="normal">보통 (3~4줄)</option>
+          <option value="short">짧게 (1~2줄)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="theme">색</label>
+        <select id="theme"></select>
+      </div>
+      <div>
+        <label for="tone">톤 (선택)</label>
+        <input id="tone" type="text" placeholder="담백하게">
+      </div>
+    </div>
+
+    <label for="brand">하단 브랜드 줄 (선택)</label>
+    <input id="brand" type="text" placeholder="예: Wellness Log | 저속노화">
+
+    <label for="photos">사진 (선택 · 여러 장)</label>
+    <input id="photos" type="file" accept="image/*" multiple>
+    <p class="keyhint">넣으면 배경으로 흐리게 깔고 본문에 2장씩 얹습니다. 없으면 색면으로 갑니다.</p>
+
+    <button id="gen" class="primary" type="button">카드뉴스 만들기</button>
+    <button id="sample" class="ghost" type="button">샘플로 보기 (키 없이)</button>
+    <p class="status" id="status"></p>
+
+    <details>
+      <summary>Claude API 키</summary>
+      <label for="key">API 키</label>
+      <input id="key" type="text" placeholder="sk-ant-...">
+      <label for="model">모델</label>
+      <select id="model"></select>
+      <p class="keyhint" id="keyHint"></p>
+    </details>
+  </section>
+
+  <section class="panel" id="result" hidden>
+    <h2>결과</h2>
+    <p id="meta"></p>
+    <div id="cards"></div>
+
+    <div class="bar">
+      <button id="saveAll" class="ghost" type="button">전체 PNG 저장</button>
+      <button id="copyCaption" class="ghost" type="button">캡션 복사</button>
+    </div>
+
+    <h2>세 룰 점검</h2>
+    <ul id="checks"></ul>
+
+    <label for="caption">캡션 · 해시태그</label>
+    <textarea id="caption" rows="8"></textarea>
+  </section>
+</main>
+
+<script src="js/llm.js"></script>
+<script src="js/carousel-prompt.js"></script>
+<script src="js/carousel-render.js"></script>
+<script src="js/carousel-app.js"></script>
+</body>
+</html>
