@@ -69,11 +69,15 @@
       '  "audience": "읽는 사람",',
       '  "message": "남길 메시지 하나",',
       '  "cards": [',
-      '    {"kind":"hook","title":"훅 한 문장","kicker":"표지 위 작은 말머리 (12자 내외)"},',
-      '    {"kind":"body","title":"제목 (12자 내외, 두 줄까지)","body":["본문 줄1","본문 줄2"]},',
+      '    {"kind":"hook","title":"훅 한 문장","kicker":"표지 위 작은 말머리 (12자 내외)",',
+      '     "photoQuery":"영문 검색어 2~4단어","photoPrompt":"영문 사진 생성 프롬프트 한 문장"},',
+      '    {"kind":"body","title":"제목 (12자 내외, 두 줄까지)","body":["본문 줄1","본문 줄2"],',
+      '     "photoQuery":"...","photoPrompt":"..."},',
       '    {"kind":"turn","title":"하지만으로 시작하는 전환 문장 (줄바꿈은 배열로)"},',
-      '    {"kind":"step","step":1,"title":"해법 제목","body":["본문 줄1","본문 줄2"]},',
-      '    {"kind":"outro","title":"회수 문장","body":["보조 문장"],"cta":"저장 유도 한 줄"}',
+      '    {"kind":"step","step":1,"title":"해법 제목","body":["본문 줄1","본문 줄2"],',
+      '     "photoQuery":"...","photoPrompt":"..."},',
+      '    {"kind":"outro","title":"회수 문장","body":["보조 문장"],"cta":"저장 유도 한 줄",',
+      '     "photoQuery":"...","photoPrompt":"..."}',
       '  ],',
       '  "caption": "인스타 캡션. 요약이 아니라 못 다한 이야기 한 조각.",',
       '  "hashtags": ["#해시태그", "10개 내외"]',
@@ -82,7 +86,14 @@
       '규칙: cards는 정확히 ' + n + '개. 첫 장은 kind:"hook", 마지막 장은 kind:"outro".',
       'kind:"turn"은 정확히 한 장이며 ' + Math.max(3, Math.round(n / 2)) + '번째 부근에 둔다.',
       'kind:"step"은 해법 장에만 쓰고 step에 1,2,3을 순서대로 넣는다.',
-      'title은 문자열, body는 문자열 배열이다. title 안에서 줄을 나누려면 \\n을 쓴다.'
+      'title은 문자열, body는 문자열 배열이다. title 안에서 줄을 나누려면 \\n을 쓴다.',
+      '',
+      '# 사진 지시 (photoQuery / photoPrompt)',
+      'kind:"turn"을 뺀 모든 장에 넣는다. 둘 다 영어로 쓴다.',
+      '- photoQuery: 무료 스톡 사이트에서 찾을 검색어. 2~4단어의 일반명사로. 예: "dark bedroom night", "healthy meal table"',
+      '- photoPrompt: 그 장의 분위기를 담은 사진 생성 프롬프트 한 문장.',
+      '  사람 얼굴이 크게 나오지 않게 하고, 마지막에 반드시 ", no text, no letters, no watermark"를 붙인다.',
+      '- 카드 문구를 그대로 옮기지 말고, 그 장이 말하는 장면을 묘사한다.'
     ].filter(Boolean).join('\n');
   }
 
@@ -123,7 +134,9 @@
       kicker: card.kicker || '',
       title: String(card.title || '').replace(/\r/g, ''),
       body: body.map((l) => String(l || '').trim()).filter(Boolean),
-      cta: card.cta || ''
+      cta: card.cta || '',
+      photoQuery: String(card.photoQuery || '').trim(),
+      photoPrompt: String(card.photoPrompt || '').trim()
     };
   }
 

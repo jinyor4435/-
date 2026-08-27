@@ -113,13 +113,20 @@
     <label for="brand">하단 브랜드 줄 (선택)</label>
     <input id="brand" type="text" placeholder="예: Wellness Log | 저속노화">
 
-    <label for="photos">사진 (선택 · 여러 장)</label>
+    <label for="photos">사진 직접 올리기 (선택 · 여러 장)</label>
     <input id="photos" type="file" accept="image/*" multiple>
     <p class="keyhint">넣으면 배경으로 흐리게 깔고 본문에 2장씩 얹습니다. 없으면 색면으로 갑니다.</p>
 
     <button id="gen" class="primary" type="button">카드뉴스 만들기</button>
     <button id="sample" class="ghost" type="button">샘플로 보기 (키 없이)</button>
     <p class="status" id="status"></p>
+
+    <details>
+      <summary>사진 자동 채우기 (Pexels 키)</summary>
+      <label for="pexelsKey">Pexels API 키</label>
+      <input id="pexelsKey" type="text" placeholder="pexels.com/api 에서 무료 발급">
+      <p class="keyhint" id="photoHint"></p>
+    </details>
 
     <details>
       <summary>Claude API 키</summary>
@@ -137,6 +144,10 @@
     <div id="cards"></div>
 
     <div class="bar">
+      <button id="autoPhotos" class="ghost" type="button">사진 자동 채우기</button>
+      <button id="copyPrompts" class="ghost" type="button">사진 프롬프트 복사</button>
+    </div>
+    <div class="bar">
       <button id="saveAll" class="ghost" type="button">전체 PNG 저장</button>
       <button id="copyCaption" class="ghost" type="button">캡션 복사</button>
     </div>
@@ -151,6 +162,7 @@
 
 <script src="js/llm.js"></script>
 <script src="js/carousel-prompt.js"></script>
+<script src="js/carousel-photos.js"></script>
 <script src="js/carousel-render.js"></script>
 <script src="js/carousel-app.js"></script>
 </body>
