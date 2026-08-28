@@ -90,7 +90,7 @@
     const o = opts || {};
     ctx.save();
     if (photo) {
-      ctx.filter = 'blur(' + (o.blur == null ? 26 : o.blur) + 'px)';
+      ctx.filter = 'blur(' + (o.blur == null ? 14 : o.blur) + 'px)';
       coverDraw(ctx, photo, -60, -60, W + 120, H + 120);
       ctx.filter = 'none';
     } else {
@@ -102,7 +102,7 @@
     }
     ctx.restore();
     if (o.veil !== 0) {
-      ctx.fillStyle = hexToRgba(o.veilColor || '#0B0B0C', o.veil == null ? 0.62 : o.veil);
+      ctx.fillStyle = hexToRgba(o.veilColor || '#0B0B0C', o.veil == null ? 0.44 : o.veil);
       ctx.fillRect(0, 0, W, H);
     }
   }
@@ -165,7 +165,7 @@
 
   function drawBody(ctx, card, ctx2) {
     const { theme, photo, tiles, index, total } = ctx2;
-    paintBackdrop(ctx, theme, photo, { blur: 26, veil: 0.66, veilColor: theme.turnBg });
+    paintBackdrop(ctx, theme, photo, { blur: 14, veil: 0.46, veilColor: theme.turnBg });
     pageMark(ctx, theme, index, total);
 
     // 사진이 없으면 글만 남으므로 시작 위치를 내려 화면 가운데로 모은다
@@ -219,7 +219,7 @@
 
   function drawOutro(ctx, card, ctx2) {
     const { theme, photo, tiles, index, total } = ctx2;
-    paintBackdrop(ctx, theme, photo, { blur: 26, veil: 0.7, veilColor: theme.turnBg });
+    paintBackdrop(ctx, theme, photo, { blur: 14, veil: 0.5, veilColor: theme.turnBg });
     pageMark(ctx, theme, index, total);
 
     const top = (tiles && tiles.length) ? 230 : 330;
@@ -242,15 +242,23 @@
         x: PAD, y: y, size: 44, weight: 700, color: theme.accent, lineHeight: 1.45, minSize: 32
       });
     }
-    if (tiles && tiles[0]) photoTile(ctx, tiles[0], 320, 850, 440, -2);
+    if (tiles && tiles[0]) photoTile(ctx, tiles[0], 320, 850, 440, -1.5);
   }
 
+  /**
+   * 사진을 서로 겹치지 않게 나란히 놓는다. 폭 920(PAD 80 기준)을 사진 수만큼
+   * 나누고 사이에 고정 간격을 둔다 — 살짝 기울이더라도 간격이 겹침을 막는다.
+   */
   function layoutTiles(ctx, tiles, top) {
     if (!tiles || !tiles.length) return;
-    if (tiles.length === 1) { photoTile(ctx, tiles[0], 300, top + 40, 460, -2); return; }
-    photoTile(ctx, tiles[0], 90, top, 420, -3);
-    photoTile(ctx, tiles[1], 570, top + 140, 420, 4);
-    if (tiles[2]) photoTile(ctx, tiles[2], 330, top + 300, 300, 2);
+    const list = tiles.slice(0, 3);
+    const gap = 28;
+    const size = Math.floor((W - PAD * 2 - gap * (list.length - 1)) / list.length);
+    const angles = [-2, 2, -1.5];
+    list.forEach((img, i) => {
+      const x = PAD + i * (size + gap);
+      photoTile(ctx, img, x, top, size, angles[i % angles.length]);
+    });
   }
 
   function pageMark(ctx, theme, index, total, color) {
