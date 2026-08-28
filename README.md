@@ -21,6 +21,12 @@
 open carousel.html        # 또는 http://localhost:8000/carousel.html
 ```
 
+파일 하나로 들고 다니려면 번들해서 씁니다 — CSS·JS가 모두 들어간 독립 HTML입니다.
+
+```bash
+node scripts/bundle-carousel.js        # → dist/carousel-single.html
+```
+
 - **카피** — 카드뉴스 세 룰(첫 장은 한 문장 훅 / 핵심은 뒤로 / 쉬운 단어)을 프롬프트에 담아 Claude가 씁니다.
 - **그림** — 브라우저 캔버스로 직접 그립니다. 사진을 올리면 배경으로 흐리게 깔고 본문에 2장씩 얹습니다.
   사진이 없으면 색면으로 갑니다.

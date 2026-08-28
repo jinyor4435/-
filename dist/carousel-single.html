@@ -1,0 +1,1397 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>카드뉴스 생성기 — 주제만 넣으면 9장</title>
+<style>
+  :root {
+    --bg:#f4f6fa; --card:#fff; --line:#dde3ec; --text:#1c2333; --muted:#64708a;
+    --navy:#1a3a6b; --accent:#2e6bd6; --ok:#1e9e5a; --warn:#d97706; --danger:#d64545;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body {
+    font-family:'Pretendard','Malgun Gothic','맑은 고딕','Noto Sans KR',system-ui,sans-serif;
+    background:var(--bg); color:var(--text); font-size:15px; line-height:1.6;
+  }
+  header { background:var(--navy); color:#fff; padding:14px 22px; display:flex; gap:14px; align-items:baseline; }
+  header b { font-size:17px; }
+  header span { color:#b9c8e4; font-size:13px; }
+  header a { margin-left:auto; color:#cfe0ff; font-size:13px; }
+  main { max-width:1180px; margin:0 auto; padding:22px; display:grid; grid-template-columns:340px 1fr; gap:22px; align-items:start; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .panel h2 { margin:0 0 4px; font-size:15px; }
+  .panel p.hint { margin:0 0 14px; color:var(--muted); font-size:13px; }
+  label { display:block; font-size:13px; font-weight:600; margin:12px 0 4px; }
+  input[type=text], textarea, select {
+    width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px;
+    font:inherit; font-size:14px; background:#fff; color:inherit;
+  }
+  textarea { resize:vertical; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button {
+    font:inherit; font-weight:600; border-radius:8px; border:1px solid transparent;
+    padding:10px 14px; cursor:pointer;
+  }
+  button.primary { background:var(--accent); color:#fff; width:100%; margin-top:16px; }
+  button.primary:disabled { background:#9db4dc; cursor:not-allowed; }
+  button.ghost { background:#fff; border-color:var(--line); color:var(--text); width:100%; margin-top:8px; }
+  button.mini { padding:4px 10px; font-size:12px; background:#fff; border-color:var(--line); }
+  .status { margin-top:10px; font-size:13px; color:var(--muted); min-height:20px; }
+  details { margin-top:16px; border-top:1px solid var(--line); padding-top:12px; }
+  summary { cursor:pointer; font-size:13px; font-weight:600; }
+  .keyhint { font-size:12px; color:var(--muted); margin-top:6px; }
+  #cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; }
+  .card { margin:0; background:#000; border-radius:10px; overflow:hidden; border:1px solid var(--line); }
+  .card canvas { width:100%; height:auto; display:block; }
+  .card figcaption {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:#fff; padding:7px 10px; font-size:12px; color:var(--muted);
+  }
+  #checks { list-style:none; margin:0; padding:0; font-size:13px; }
+  #checks li { padding:6px 10px; border-radius:6px; margin-bottom:5px; }
+  #checks li.ok { background:#eaf7ef; color:#14683c; }
+  #checks li.warn { background:#fdf3e3; color:#8a5a06; }
+  #checks li.error { background:#fdeaea; color:#9c2b2b; }
+  #meta { color:var(--muted); font-size:13px; margin:0 0 12px; }
+  .bar { display:flex; gap:8px; margin:14px 0; }
+  .bar button { flex:1; }
+</style>
+</head>
+<body>
+<header>
+  <b>카드뉴스 생성기</b>
+  <span>주제 한 줄 → 카피 → 카드 이미지까지</span>
+  <a href="index.html">← 사업계획서 생성기</a>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>무엇에 대해 쓸까요</h2>
+    <p class="hint">주제만 넣어도 됩니다. 나머지는 비워두면 알아서 정합니다.</p>
+
+    <label for="topic">주제 · 제목</label>
+    <input id="topic" type="text" placeholder="예: 프리랜서가 견적 깎아달란 말 들었을 때">
+
+    <label for="audience">읽는 사람 (선택)</label>
+    <input id="audience" type="text" placeholder="예: 막 시작한 20대 후반 프리랜서">
+
+    <label for="message">남길 메시지 하나 (선택)</label>
+    <input id="message" type="text" placeholder="비워두면 주제에서 뽑습니다">
+
+    <div class="row">
+      <div>
+        <label for="platform">플랫폼</label>
+        <select id="platform">
+          <option value="instagram">인스타 9장</option>
+          <option value="threads">스레드 6개</option>
+          <option value="linkedin">링크드인 10장</option>
+        </select>
+      </div>
+      <div>
+        <label for="density">본문 분량</label>
+        <select id="density">
+          <option value="normal">보통 (3~4줄)</option>
+          <option value="short">짧게 (1~2줄)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="theme">색</label>
+        <select id="theme"></select>
+      </div>
+      <div>
+        <label for="tone">톤 (선택)</label>
+        <input id="tone" type="text" placeholder="담백하게">
+      </div>
+    </div>
+
+    <label for="brand">하단 브랜드 줄 (선택)</label>
+    <input id="brand" type="text" placeholder="예: Wellness Log | 저속노화">
+
+    <label for="photos">사진 직접 올리기 (선택 · 여러 장)</label>
+    <input id="photos" type="file" accept="image/*" multiple>
+    <p class="keyhint">넣으면 배경으로 흐리게 깔고 본문에 2장씩 얹습니다. 없으면 색면으로 갑니다.</p>
+
+    <button id="gen" class="primary" type="button">카드뉴스 만들기</button>
+    <button id="sample" class="ghost" type="button">샘플로 보기 (키 없이)</button>
+    <p class="status" id="status"></p>
+
+    <details>
+      <summary>사진 자동 채우기 (Pexels 키)</summary>
+      <label for="pexelsKey">Pexels API 키</label>
+      <input id="pexelsKey" type="text" placeholder="pexels.com/api 에서 무료 발급">
+      <p class="keyhint" id="photoHint"></p>
+    </details>
+
+    <details>
+      <summary>Claude API 키</summary>
+      <label for="key">API 키</label>
+      <input id="key" type="text" placeholder="sk-ant-...">
+      <label for="model">모델</label>
+      <select id="model"></select>
+      <p class="keyhint" id="keyHint"></p>
+    </details>
+  </section>
+
+  <section class="panel" id="result" hidden>
+    <h2>결과</h2>
+    <p id="meta"></p>
+    <div id="cards"></div>
+
+    <div class="bar">
+      <button id="autoPhotos" class="ghost" type="button">사진 자동 채우기</button>
+      <button id="copyPrompts" class="ghost" type="button">사진 프롬프트 복사</button>
+    </div>
+    <div class="bar">
+      <button id="saveAll" class="ghost" type="button">전체 PNG 저장</button>
+      <button id="copyCaption" class="ghost" type="button">캡션 복사</button>
+    </div>
+
+    <h2>세 룰 점검</h2>
+    <ul id="checks"></ul>
+
+    <label for="caption">캡션 · 해시태그</label>
+    <textarea id="caption" rows="8"></textarea>
+  </section>
+</main>
+
+<script>
+/* ── js/llm.js ── */
+/**
+ * 자동 생성 엔진 — 앱이 만든 프롬프트를 Claude API로 직접 보내고, 결과만 화면에 흘려준다.
+ *
+ * 붙여넣기 없이 동작하려면 브라우저가 api.anthropic.com에 직접 요청할 수 있어야 한다.
+ * (게시된 아티팩트 링크 안에서는 외부 호출이 차단되므로 자동 모드가 동작하지 않는다.
+ *  이때는 앱이 그 사실을 감지해 수동 모드로 안내한다.)
+ *
+ * API 키는 이 브라우저의 localStorage에만 저장되고, 요청은 앱 → Anthropic으로만 나간다.
+ */
+(function (global) {
+  'use strict';
+
+  const LS_KEY = 'gfp_llm_v1';
+  const ENDPOINT = 'https://api.anthropic.com/v1/messages';
+  const API_VERSION = '2023-06-01';
+
+  const MODELS = [
+    { id: 'claude-opus-5', name: 'Claude Opus 5', hint: '가장 품질이 높음 (권장)' },
+    { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', hint: '빠르고 저렴' }
+  ];
+
+  const DEFAULTS = { apiKey: '', model: 'claude-opus-5', thinking: true };
+
+  let settings = null;
+
+  function get() {
+    if (settings) return settings;
+    settings = Object.assign({}, DEFAULTS);
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) Object.assign(settings, JSON.parse(raw) || {});
+    } catch (e) { /* 저장소가 막힌 환경 — 기본값으로 진행 */ }
+    if (!MODELS.some((m) => m.id === settings.model)) settings.model = DEFAULTS.model;
+    return settings;
+  }
+
+  function set(patch) {
+    const s = Object.assign(get(), patch || {});
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(s));
+    } catch (e) { /* 세션 동안만 유지 */ }
+    return s;
+  }
+
+  function clear() {
+    settings = Object.assign({}, DEFAULTS);
+    try { localStorage.removeItem(LS_KEY); } catch (e) { /* 무시 */ }
+  }
+
+  /** 키가 있고 형식이 그럴듯한가 — 자동 모드 노출 여부 판단에만 쓴다 */
+  function ready() {
+    const k = (get().apiKey || '').trim();
+    return k.length > 20;
+  }
+
+  function maskKey(k) {
+    const s = (k || '').trim();
+    if (s.length < 12) return s ? '••••' : '';
+    return s.slice(0, 11) + '…' + s.slice(-4);
+  }
+
+  function headers(key) {
+    return {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': API_VERSION,
+      'anthropic-dangerous-direct-browser-access': 'true'
+    };
+  }
+
+  /** 네트워크 자체가 막힌 경우(아티팩트 CSP 등)와 API 오류를 구분해서 알려준다 */
+  function netError(e) {
+    const err = new Error(
+      '이 환경에서는 앱이 Claude API에 직접 연결할 수 없습니다.\n' +
+      '게시된 아티팩트 링크 안에서는 외부 통신이 차단됩니다. ' +
+      '단일 실행 파일(app-single.html)을 내려받아 브라우저에서 열면 자동 생성이 동작합니다. ' +
+      '지금은 아래 수동 모드(프롬프트 복사 → 붙여넣기)를 이용하세요.'
+    );
+    err.code = 'blocked';
+    err.cause = e;
+    return err;
+  }
+
+  async function apiError(res) {
+    let detail = '';
+    try {
+      const body = await res.json();
+      detail = (body && body.error && body.error.message) || '';
+    } catch (e) { /* 본문 없음 */ }
+    const map = {
+      401: 'API 키가 올바르지 않습니다. 설정에서 키를 다시 확인해 주세요.',
+      403: 'API 키에 이 모델을 사용할 권한이 없습니다.',
+      404: '요청한 모델을 찾을 수 없습니다. 설정에서 다른 모델을 선택해 보세요.',
+      429: '요청 한도(rate limit)에 걸렸습니다. 잠시 후 다시 시도해 주세요.',
+      529: 'Claude 서버가 혼잡합니다. 잠시 후 다시 시도해 주세요.'
+    };
+    const head = map[res.status] || ('요청이 실패했습니다 (HTTP ' + res.status + ').');
+    const err = new Error(detail ? head + '\n' + detail : head);
+    err.code = res.status === 401 || res.status === 403 ? 'auth' : 'api';
+    err.status = res.status;
+    return err;
+  }
+
+  /**
+   * 스트리밍 호출. onToken(chunk, full)으로 본문이 조각조각 올라오고,
+   * onThinking(isThinking)으로 "생각 중" 상태를 알려준다.
+   * 반환값은 누적된 본문 텍스트.
+   */
+  async function stream(opts) {
+    const o = opts || {};
+    const s = get();
+    const key = (o.apiKey || s.apiKey || '').trim();
+    if (!key) throw Object.assign(new Error('API 키가 없습니다.'), { code: 'nokey' });
+
+    const body = {
+      model: o.model || s.model || DEFAULTS.model,
+      max_tokens: o.maxTokens || 16000,
+      stream: true,
+      messages: [{ role: 'user', content: String(o.prompt || '') }]
+    };
+    if (o.system) body.system = o.system;
+    // 4.6 이후 모델은 budget_tokens 없이 adaptive만 받는다
+    if (o.thinking !== false && s.thinking !== false) body.thinking = { type: 'adaptive' };
+
+    let res;
+    try {
+      res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: headers(key),
+        body: JSON.stringify(body),
+        signal: o.signal
+      });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      throw netError(e);
+    }
+    if (!res.ok) throw await apiError(res);
+    if (!res.body) throw new Error('스트리밍 응답을 읽을 수 없는 브라우저입니다.');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let full = '';
+    let thinking = false;
+
+    const setThinking = (v) => {
+      if (v === thinking) return;
+      thinking = v;
+      if (o.onThinking) o.onThinking(v);
+    };
+
+    const handle = (payload) => {
+      let ev;
+      try { ev = JSON.parse(payload); } catch (e) { return; }
+      if (!ev || !ev.type) return;
+      if (ev.type === 'content_block_start') {
+        setThinking(ev.content_block && ev.content_block.type === 'thinking');
+      } else if (ev.type === 'content_block_delta') {
+        const d = ev.delta || {};
+        if (d.type === 'text_delta' && d.text) {
+          setThinking(false);
+          full += d.text;
+          if (o.onToken) o.onToken(d.text, full);
+        } else if (d.type === 'thinking_delta') {
+          setThinking(true);
+        }
+      } else if (ev.type === 'content_block_stop') {
+        setThinking(false);
+      } else if (ev.type === 'error') {
+        const msg = (ev.error && ev.error.message) || '스트리밍 중 오류가 발생했습니다.';
+        throw Object.assign(new Error(msg), { code: 'api' });
+      }
+    };
+
+    for (;;) {
+      let chunk;
+      try {
+        chunk = await reader.read();
+      } catch (e) {
+        if (e && e.name === 'AbortError') throw e;
+        throw netError(e);
+      }
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf('\n\n')) >= 0) {
+        const raw = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        raw.split('\n').forEach((line) => {
+          const t = line.trim();
+          if (t.slice(0, 5) === 'data:') handle(t.slice(5).trim());
+        });
+      }
+    }
+    setThinking(false);
+    if (!full.trim()) throw new Error('응답이 비어 있습니다. 잠시 후 다시 시도해 주세요.');
+    return full;
+  }
+
+  /** 설정 화면의 "연결 테스트" — 짧은 호출 한 번으로 키·모델·네트워크를 모두 확인한다 */
+  async function test(apiKey, model) {
+    const key = (apiKey || get().apiKey || '').trim();
+    if (!key) throw Object.assign(new Error('API 키를 입력해 주세요.'), { code: 'nokey' });
+    let res;
+    try {
+      res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: headers(key),
+        body: JSON.stringify({
+          model: model || get().model || DEFAULTS.model,
+          max_tokens: 16,
+          messages: [{ role: 'user', content: 'ping' }]
+        })
+      });
+    } catch (e) {
+      throw netError(e);
+    }
+    if (!res.ok) throw await apiError(res);
+    return true;
+  }
+
+  global.LLM = { get, set, clear, ready, maskKey, stream, test, MODELS, DEFAULTS };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* ── js/carousel-prompt.js ── */
+/**
+ * 카드뉴스 프롬프트 — 세 가지 룰(한 문장 훅 / 핵심 지연 / 쉬운 단어)을
+ * 그대로 모델에게 넘기고, 화면이 바로 그릴 수 있는 JSON만 받아온다.
+ *
+ * 룰의 출처는 .claude/skills/carousel 이며, 문구가 바뀌면 양쪽을 같이 고친다.
+ */
+(function (global) {
+  'use strict';
+
+  const PLATFORMS = {
+    instagram: { label: '인스타 캐러셀', cards: 9, ratio: '4:5', bodyLines: '3~4줄' },
+    threads:   { label: '스레드 체인',   cards: 6, ratio: '4:5', bodyLines: '2~3줄' },
+    linkedin:  { label: '링크드인',      cards: 10, ratio: '4:5', bodyLines: '3~4줄' }
+  };
+
+  const JARGON = {
+    '리텐션': '끝까지 보는 사람', '인게이지먼트': '반응', '도달률': '몇 명에게 보이는지',
+    '임프레션': '보인 횟수', '퍼널': '사는 데까지 오는 길', '컨버전': '실제 행동',
+    '온보딩': '처음 익히는 과정', '레버리지': '지렛대처럼 쓰는 것', '시너지': '같이 커지는 것',
+    '페인포인트': '불편한 지점', '니즈': '원하는 것', '인사이트': '알게 된 것',
+    '최적화': '다듬기', '고도화': '더 낫게 만들기', '프로세스': '순서', '메커니즘': '작동 원리'
+  };
+
+  /** 사용자 입력 → 모델에게 보낼 프롬프트 한 덩어리 */
+  function build(input) {
+    const p = PLATFORMS[input.platform] || PLATFORMS.instagram;
+    const n = input.cards || p.cards;
+    const density = input.density === 'short' ? '1~2줄' : p.bodyLines;
+
+    return [
+      '너는 한국어 카드뉴스(캐러셀) 카피라이터다. 아래 세 가지 룰을 지켜 ' + n + '장을 쓴다.',
+      '',
+      '# 룰 1 — 첫 장은 한 문장',
+      '첫 장(훅)의 역할은 정보 전달이 아니라 안 넘기고는 못 배기게 만드는 것이다.',
+      '- 한 문장, 20자 내외, 두 줄 이내. 25자를 넘으면 잘라낼 곳이 있다는 뜻이다.',
+      '- 배경 설명·인사·자기소개는 전부 뺀다. 마침표는 대개 빼는 게 낫다.',
+      '- 공감("이거 내 얘기네") 또는 반전("어? 왜?") 중 하나로만 건다. 둘 다 노리면 둘 다 놓친다.',
+      '',
+      '# 룰 2 — 핵심을 바로 주지 마라',
+      '2장에서 정답부터 주면 머무를 이유가 사라진다. 답은 절반 지점 이후로 민다.',
+      '구성: 훅 → 문제 제시 → 고통 증폭 → 기존 방식 확인 → "하지만" 전환 → 해법(한 장에 하나씩) → 회수 → CTA',
+      '- "하지만" 전환은 전체의 절반쯤에 둔다. 기존 방식을 세운 뒤 뒤집어야 힘이 생긴다.',
+      '- 한 장에 메시지는 하나. 모든 장은 다음 장으로 넘어갈 이유를 남긴다.',
+      '- 마지막 장 회수: 훅의 단어를 다시 꺼내 닫는다.',
+      '',
+      '# 룰 3 — 단순함이 이긴다',
+      '어려운 단어는 감탄이 아니라 혼란을 만든다. 중학생이 한 번에 이해할 수 있어야 한다.',
+      '- 전문용어는 읽는 사람의 말로 바꾼다. 예: ' +
+        Object.keys(JARGON).slice(0, 5).map((k) => k + ' → ' + JARGON[k]).join(', '),
+      '- 한 문장 25자 이내, 수식어보다 동사. 짧은 문장·짧은 문장·조금 긴 문장으로 리듬을 만든다.',
+      '',
+      '# 이번 건',
+      '- 주제: ' + (input.topic || '').trim(),
+      (input.audience ? '- 읽는 사람: ' + input.audience.trim() : '- 읽는 사람: 주제에 맞춰 네가 정한다'),
+      (input.message ? '- 남길 메시지 하나: ' + input.message.trim() : '- 남길 메시지 하나: 네가 정한다 (반드시 한 개)'),
+      '- 플랫폼: ' + p.label + ' ' + n + '장 (' + p.ratio + ')',
+      '- 본문 분량: 장당 ' + density + ', 한 줄 24자 이내',
+      (input.tone ? '- 톤: ' + input.tone.trim() : ''),
+      '',
+      '# 절대 하지 말 것',
+      '- 근거 없는 수치·후기·사례를 지어내지 않는다. 숫자가 필요한 자리에는 【확인】 표시만 남긴다.',
+      '- 의학·법률·금융에서 단정적인 효과를 약속하지 않는다.',
+      '- 슬라이드 텍스트에 설명이나 지시문을 섞지 않는다.',
+      '',
+      '# 출력 형식',
+      '아래 JSON만 출력한다. 코드펜스도 설명도 붙이지 않는다.',
+      '{',
+      '  "topic": "주제 한 줄",',
+      '  "audience": "읽는 사람",',
+      '  "message": "남길 메시지 하나",',
+      '  "cards": [',
+      '    {"kind":"hook","title":"훅 한 문장","kicker":"표지 위 작은 말머리 (12자 내외)",',
+      '     "photoQuery":"영문 검색어 2~4단어","photoPrompt":"영문 사진 생성 프롬프트 한 문장"},',
+      '    {"kind":"body","title":"제목 (12자 내외, 두 줄까지)","body":["본문 줄1","본문 줄2"],',
+      '     "photoQuery":"...","photoPrompt":"..."},',
+      '    {"kind":"turn","title":"하지만으로 시작하는 전환 문장 (줄바꿈은 배열로)"},',
+      '    {"kind":"step","step":1,"title":"해법 제목","body":["본문 줄1","본문 줄2"],',
+      '     "photoQuery":"...","photoPrompt":"..."},',
+      '    {"kind":"outro","title":"회수 문장","body":["보조 문장"],"cta":"저장 유도 한 줄",',
+      '     "photoQuery":"...","photoPrompt":"..."}',
+      '  ],',
+      '  "caption": "인스타 캡션. 요약이 아니라 못 다한 이야기 한 조각.",',
+      '  "hashtags": ["#해시태그", "10개 내외"]',
+      '}',
+      '',
+      '규칙: cards는 정확히 ' + n + '개. 첫 장은 kind:"hook", 마지막 장은 kind:"outro".',
+      'kind:"turn"은 정확히 한 장이며 ' + Math.max(3, Math.round(n / 2)) + '번째 부근에 둔다.',
+      'kind:"step"은 해법 장에만 쓰고 step에 1,2,3을 순서대로 넣는다.',
+      'title은 문자열, body는 문자열 배열이다. title 안에서 줄을 나누려면 \\n을 쓴다.',
+      '',
+      '# 사진 지시 (photoQuery / photoPrompt)',
+      'kind:"turn"을 뺀 모든 장에 넣는다. 둘 다 영어로 쓴다.',
+      '- photoQuery: 무료 스톡 사이트에서 찾을 검색어. 2~4단어의 일반명사로. 예: "dark bedroom night", "healthy meal table"',
+      '- photoPrompt: 그 장의 분위기를 담은 사진 생성 프롬프트 한 문장.',
+      '  사람 얼굴이 크게 나오지 않게 하고, 마지막에 반드시 ", no text, no letters, no watermark"를 붙인다.',
+      '- 카드 문구를 그대로 옮기지 말고, 그 장이 말하는 장면을 묘사한다.'
+    ].filter(Boolean).join('\n');
+  }
+
+  /** 모델 응답에서 JSON만 건져낸다 — 코드펜스나 앞뒤 설명이 붙어도 살린다 */
+  function parse(text) {
+    const raw = String(text || '');
+    let s = raw.trim();
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) s = fence[1].trim();
+    if (s[0] !== '{') {
+      const a = s.indexOf('{');
+      const b = s.lastIndexOf('}');
+      if (a < 0 || b <= a) throw new Error('응답에서 JSON을 찾지 못했습니다.');
+      s = s.slice(a, b + 1);
+    }
+    let data;
+    try {
+      data = JSON.parse(s);
+    } catch (e) {
+      throw new Error('JSON 형식이 어긋났습니다. 다시 생성해 보세요.');
+    }
+    if (!data || !Array.isArray(data.cards) || !data.cards.length) {
+      throw new Error('cards가 비어 있습니다. 다시 생성해 보세요.');
+    }
+    data.cards = data.cards.map(normalizeCard);
+    data.hashtags = Array.isArray(data.hashtags) ? data.hashtags : [];
+    return data;
+  }
+
+  function normalizeCard(c, i) {
+    const card = c && typeof c === 'object' ? c : {};
+    const kind = card.kind || (i === 0 ? 'hook' : 'body');
+    const body = Array.isArray(card.body) ? card.body
+      : (typeof card.body === 'string' && card.body ? card.body.split('\n') : []);
+    return {
+      kind: kind,
+      step: card.step || null,
+      kicker: card.kicker || '',
+      title: String(card.title || '').replace(/\r/g, ''),
+      body: body.map((l) => String(l || '').trim()).filter(Boolean),
+      cta: card.cta || '',
+      photoQuery: String(card.photoQuery || '').trim(),
+      photoPrompt: String(card.photoPrompt || '').trim()
+    };
+  }
+
+  /**
+   * 스킬의 검사 스크립트와 같은 항목을 화면에서 확인한다.
+   * 경고는 막지 않는다 — 사람이 보고 판단할 몫이다.
+   */
+  function check(data) {
+    const out = [];
+    const cards = data.cards || [];
+    const n = cards.length;
+    const chars = (s) => String(s || '').replace(/\s/g, '').length;
+
+    const hook = cards[0] || {};
+    const hookText = [hook.title].concat(hook.body || []).join(' ');
+    const hookLines = String(hook.title || '').split('\n').length + (hook.body || []).length;
+    const sentences = hookText.split(/[.!?…]+/).filter((t) => t.trim()).length;
+    if (chars(hookText) > 25) out.push({ level: 'warn', text: '[룰 1] 훅이 ' + chars(hookText) + '자 — 25자 내외로 줄이면 좋습니다.' });
+    if (hookLines > 2) out.push({ level: 'error', text: '[룰 1] 훅이 ' + hookLines + '줄 — 두 줄을 넘으면 0.5초 안에 안 읽힙니다.' });
+    if (sentences > 1) out.push({ level: 'error', text: '[룰 1] 훅에 문장이 ' + sentences + '개 — 한 문장으로 줄입니다.' });
+
+    const turnAt = cards.findIndex((c) => c.kind === 'turn' || /하지만|그러나|반대로/.test(c.title || ''));
+    if (turnAt < 0) out.push({ level: 'error', text: '[룰 2] "하지만" 전환 장이 없습니다.' });
+    else if (turnAt + 1 < 3) out.push({ level: 'warn', text: '[룰 2] 전환이 ' + (turnAt + 1) + '장 — 긴장을 쌓기 전에 뒤집으면 힘이 없습니다.' });
+
+    const firstStep = cards.findIndex((c) => c.kind === 'step');
+    if (firstStep >= 0 && firstStep + 1 <= Math.floor(n / 2)) {
+      out.push({ level: 'warn', text: '[룰 2] 해법이 ' + (firstStep + 1) + '장에서 시작합니다 — 절반 이후로 미는 쪽이 낫습니다.' });
+    }
+
+    const all = cards.map((c) => [c.title].concat(c.body || []).join(' ')).join('\n');
+    Object.keys(JARGON).forEach((w) => {
+      if (all.indexOf(w) >= 0) out.push({ level: 'warn', text: '[룰 3] 전문용어 "' + w + '" → "' + JARGON[w] + '"로 바꿔보세요.' });
+    });
+
+    cards.forEach((c, i) => {
+      (c.body || []).concat(String(c.title || '').split('\n')).forEach((line) => {
+        if (chars(line) > 28) out.push({ level: 'warn', text: '[룰 3] ' + (i + 1) + '장에 ' + chars(line) + '자짜리 줄이 있습니다 — 24자 내외로 끊습니다.' });
+      });
+    });
+
+    const last = cards[n - 1] || {};
+    const ctaText = (last.cta || '') + ' ' + (last.body || []).join(' ');
+    const ctas = ['저장', '공유', '팔로우', '댓글', '프로필', '링크'].filter((w) => ctaText.indexOf(w) >= 0);
+    if (!ctas.length) out.push({ level: 'warn', text: '마지막 장에 행동 요청(CTA)이 없습니다.' });
+    else if (ctas.length > 1) out.push({ level: 'error', text: '마지막 장 CTA가 ' + ctas.length + '개(' + ctas.join(', ') + ') — 하나만 남깁니다.' });
+
+    if (/\d+\s*(%|퍼센트|배 이상|명|건|만원)/.test(all) && all.indexOf('【확인') < 0) {
+      out.push({ level: 'warn', text: '수치가 들어 있습니다 — 실제 근거가 있는 숫자인지 확인하세요.' });
+    }
+    return out;
+  }
+
+  global.CarouselPrompt = { build: build, parse: parse, check: check, PLATFORMS: PLATFORMS, JARGON: JARGON };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* ── js/carousel-photos.js ── */
+/**
+ * 사진 채우기 — 카피가 만들어 준 영문 검색어로 무료 스톡 사진을 찾아 장마다 배치한다.
+ *
+ * Pexels를 기본으로 쓴다. 무료 키를 https://www.pexels.com/api/ 에서 발급받아
+ * 넣으면 되고, 키는 이 브라우저의 localStorage에만 남는다.
+ *
+ * 캔버스 오염(tainted canvas) 주의:
+ *   다른 도메인 이미지를 crossOrigin 없이 그리면 PNG로 내보낼 때 브라우저가 막는다.
+ *   그래서 항상 crossOrigin='anonymous'로 불러오고, 실패하면 그 사진은 버린다.
+ *   버리는 편이 "화면에는 보이는데 저장이 안 되는" 상태보다 낫다.
+ */
+(function (global) {
+  'use strict';
+
+  const LS_KEY = 'carousel_photos_v1';
+  const ENDPOINT = 'https://api.pexels.com/v1/search';
+
+  let settings = null;
+
+  function get() {
+    if (settings) return settings;
+    settings = { apiKey: '' };
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) Object.assign(settings, JSON.parse(raw) || {});
+    } catch (e) { /* 저장소가 막힌 환경 */ }
+    return settings;
+  }
+
+  function set(patch) {
+    const s = Object.assign(get(), patch || {});
+    try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch (e) { /* 무시 */ }
+    return s;
+  }
+
+  function ready() { return (get().apiKey || '').trim().length > 10; }
+
+  /** 검색어 하나로 후보 사진 목록을 받아온다 */
+  async function search(query, opts) {
+    const o = opts || {};
+    const key = (o.apiKey || get().apiKey || '').trim();
+    if (!key) throw Object.assign(new Error('Pexels API 키가 없습니다.'), { code: 'nokey' });
+
+    const url = ENDPOINT +
+      '?query=' + encodeURIComponent(query) +
+      '&per_page=' + (o.perPage || 6) +
+      '&orientation=' + (o.orientation || 'portrait');
+
+    let res;
+    try {
+      res = await fetch(url, { headers: { Authorization: key }, signal: o.signal });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      throw Object.assign(
+        new Error('사진 서버에 연결하지 못했습니다. 네트워크나 방화벽을 확인해 주세요.'),
+        { code: 'blocked', cause: e }
+      );
+    }
+    if (res.status === 401) throw Object.assign(new Error('Pexels 키가 올바르지 않습니다.'), { code: 'auth' });
+    if (res.status === 429) throw Object.assign(new Error('Pexels 요청 한도에 걸렸습니다. 잠시 후 다시 시도해 주세요.'), { code: 'rate' });
+    if (!res.ok) throw new Error('사진 검색이 실패했습니다 (HTTP ' + res.status + ').');
+
+    const body = await res.json();
+    return (body.photos || []).map((p) => ({
+      id: p.id,
+      // large는 폭 940 안팎 — 1080 카드에 쓰기 충분하고 내려받기도 빠르다
+      url: (p.src && (p.src.large || p.src.medium)) || '',
+      full: (p.src && p.src.large2x) || '',
+      author: p.photographer || '',
+      link: p.url || ''
+    })).filter((p) => p.url);
+  }
+
+  /** CORS를 허용하는 방식으로만 불러온다 — 그래야 나중에 PNG로 저장할 수 있다 */
+  function load(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('이미지를 불러오지 못했습니다: ' + url));
+      img.src = url;
+    });
+  }
+
+  /**
+   * 카드 배열을 받아 장마다 사진을 채운다.
+   * 같은 검색어는 한 번만 부르고, 전환 장은 건너뛴다(사진 없이 색만 뒤집는 장이라서).
+   * 반환: { images: [카드순 이미지 배열], credits: [출처], misses: [못 찾은 검색어] }
+   */
+  async function fill(cards, opts) {
+    const o = opts || {};
+    const cache = {};
+    const images = [];
+    const credits = [];
+    const misses = [];
+
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      if (card.kind === 'turn') { images.push(null); continue; }
+      const q = (card.photoQuery || o.fallbackQuery || '').trim();
+      if (!q) { images.push(null); misses.push('(검색어 없음) ' + (i + 1) + '장'); continue; }
+
+      if (o.onProgress) o.onProgress(i, cards.length, q);
+      try {
+        if (!cache[q]) cache[q] = await search(q, o);
+        const hit = cache[q][i % Math.max(cache[q].length, 1)] || cache[q][0];
+        if (!hit) { images.push(null); misses.push(q); continue; }
+        const img = await load(hit.url);
+        images.push(img);
+        credits.push({ author: hit.author, link: hit.link, query: q });
+      } catch (e) {
+        if (e && (e.code === 'nokey' || e.code === 'auth' || e.name === 'AbortError')) throw e;
+        images.push(null);
+        misses.push(q);
+      }
+    }
+    return { images: images, credits: credits, misses: misses };
+  }
+
+  /** 카피 전체에서 이미지 생성 프롬프트만 뽑아 붙여쓰기 좋게 만든다 */
+  function promptSheet(data) {
+    const lines = [];
+    (data.cards || []).forEach((c, i) => {
+      if (!c.photoPrompt) return;
+      lines.push((i + 1) + '. ' + c.photoPrompt);
+    });
+    if (!lines.length) return '';
+    return [
+      '# 카드별 사진 생성 프롬프트 (' + (data.topic || '') + ')',
+      '4:5 세로, 사진 안에 글자가 들어가지 않게 생성하세요.',
+      ''
+    ].concat(lines).join('\n');
+  }
+
+  /**
+   * 캔버스가 오염됐는지 확인한다 — 오염되면 PNG 저장이 막힌다.
+   * 저장을 시도하기 전에 이걸로 먼저 알려주는 편이 낫다.
+   */
+  function exportable(canvas) {
+    try { canvas.toDataURL('image/png'); return true; }
+    catch (e) { return false; }
+  }
+
+  global.CarouselPhotos = {
+    get: get, set: set, ready: ready,
+    search: search, load: load, fill: fill,
+    promptSheet: promptSheet, exportable: exportable
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* ── js/carousel-render.js ── */
+/**
+ * 카드 렌더러 — 카피 한 장을 1080×1350 캔버스로 그린다.
+ *
+ * 레이아웃은 카드뉴스에서 실제로 통하는 형태로 고정했다.
+ *   표지  : 사진 위 어두운 막 + 킥커 + 큰 훅 + 브랜드 줄
+ *   본문  : 흐린 배경 + 큰 제목 + 본문 + 사진 2장 겹치기 + 페이지 표시
+ *   전환  : 사진 없이 색을 뒤집고 문장만 크게
+ *   마무리: 회수 문장 + 가로선 + CTA + 사진 1장
+ *
+ * 배경 흐림은 캔버스 filter로 직접 처리한다 — 흐린 사진을 따로 준비할 필요가 없다.
+ */
+(function (global) {
+  'use strict';
+
+  const W = 1080;
+  const H = 1350;
+  const PAD = 80;
+  const FONT = "'Pretendard', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif";
+
+  const THEMES = {
+    night: { name: '어두운 밤', bg: '#12100E', ink: '#FFFFFF', sub: '#D9CFC2',
+             dim: '#B9B2A8', accent: '#E8DCC8', turnBg: '#0B0B0C',
+             grad: ['#241d16', '#12100e'] },
+    ocean: { name: '딥 블루', bg: '#0C1522', ink: '#FFFFFF', sub: '#C6D4E4',
+             dim: '#93A4B8', accent: '#7FB2F0', turnBg: '#070C14',
+             grad: ['#16283f', '#0c1522'] },
+    paper: { name: '따뜻한 종이', bg: '#F3EDE4', ink: '#1B1815', sub: '#4A4239',
+             dim: '#7A7065', accent: '#B4542A', turnBg: '#1B1815',
+             grad: ['#faf6ef', '#ece3d6'] }
+  };
+
+  /* ───────── 글자 다루기 ───────── */
+
+  /** 폭에 맞춰 줄을 나눈다. 한국어는 어절 단위로 끊고, 한 어절이 넘치면 글자로 쪼갠다. */
+  function wrap(ctx, text, maxWidth) {
+    const out = [];
+    String(text || '').split('\n').forEach((para) => {
+      if (!para.trim()) { out.push(''); return; }
+      let line = '';
+      para.split(' ').forEach((word) => {
+        const next = line ? line + ' ' + word : word;
+        if (ctx.measureText(next).width <= maxWidth) { line = next; return; }
+        if (line) out.push(line);
+        if (ctx.measureText(word).width <= maxWidth) { line = word; return; }
+        let piece = '';
+        for (const ch of word) {
+          if (ctx.measureText(piece + ch).width > maxWidth) { out.push(piece); piece = ch; }
+          else piece += ch;
+        }
+        line = piece;
+      });
+      out.push(line);
+    });
+    return out;
+  }
+
+  /**
+   * 넘치지 않는 가장 큰 글자 크기를 찾아 그린다.
+   * 카드뉴스는 큰 글씨가 생명이라 줄이기 전에 최대 크기부터 시도한다.
+   */
+  function drawText(ctx, text, opts) {
+    const o = opts || {};
+    const maxWidth = o.maxWidth || (W - PAD * 2);
+    const weight = o.weight || 400;
+    const lh = o.lineHeight || 1.5;
+    let size = o.size;
+    let lines;
+    for (;;) {
+      ctx.font = weight + ' ' + size + 'px ' + FONT;
+      lines = wrap(ctx, text, maxWidth);
+      const fits = (!o.maxLines || lines.length <= o.maxLines) &&
+                   (!o.maxHeight || lines.length * size * lh <= o.maxHeight);
+      if (fits || size <= (o.minSize || 28)) break;
+      size -= 2;
+    }
+    ctx.fillStyle = o.color || '#fff';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    let y = o.y;
+    lines.forEach((line) => {
+      ctx.fillText(line, o.x, y + (size * lh - size) / 2);
+      y += size * lh;
+    });
+    return { bottom: y, size: size, lines: lines.length };
+  }
+
+  /* ───────── 배경과 사진 ───────── */
+
+  function paintBackdrop(ctx, theme, photo, opts) {
+    const o = opts || {};
+    ctx.save();
+    if (photo) {
+      ctx.filter = 'blur(' + (o.blur == null ? 26 : o.blur) + 'px)';
+      coverDraw(ctx, photo, -60, -60, W + 120, H + 120);
+      ctx.filter = 'none';
+    } else {
+      const g = ctx.createLinearGradient(0, 0, W * 0.6, H);
+      g.addColorStop(0, theme.grad[0]);
+      g.addColorStop(1, theme.grad[1]);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+    if (o.veil !== 0) {
+      ctx.fillStyle = hexToRgba(o.veilColor || '#0B0B0C', o.veil == null ? 0.62 : o.veil);
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  /** 비율을 유지한 채 지정한 사각형을 가득 채운다 (CSS object-fit: cover) */
+  function coverDraw(ctx, img, x, y, w, h) {
+    const ir = img.width / img.height;
+    const rr = w / h;
+    let sw = img.width, sh = img.height, sx = 0, sy = 0;
+    if (ir > rr) { sw = img.height * rr; sx = (img.width - sw) / 2; }
+    else { sh = img.width / rr; sy = (img.height - sh) / 2; }
+    ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+  }
+
+  function photoTile(ctx, img, x, y, size, angle) {
+    if (!img) return;
+    ctx.save();
+    ctx.translate(x + size / 2, y + size / 2);
+    ctx.rotate((angle || 0) * Math.PI / 180);
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 34;
+    ctx.shadowOffsetY = 12;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(-size / 2, -size / 2, size, size);
+    ctx.shadowColor = 'transparent';
+    ctx.beginPath();
+    ctx.rect(-size / 2, -size / 2, size, size);
+    ctx.clip();
+    coverDraw(ctx, img, -size / 2, -size / 2, size, size);
+    ctx.restore();
+  }
+
+  function hexToRgba(hex, a) {
+    const h = hex.replace('#', '');
+    const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+
+  /* ───────── 장 종류별 그리기 ───────── */
+
+  function drawHook(ctx, card, ctx2) {
+    const { theme, photo, brand } = ctx2;
+    paintBackdrop(ctx, theme, photo, { blur: 0, veil: 0.5 });
+    let y = H - 500;
+    if (card.kicker) {
+      const k = drawText(ctx, card.kicker, {
+        x: PAD, y: y, size: 38, weight: 700, color: theme.dim, maxLines: 1, lineHeight: 1.3
+      });
+      y = k.bottom + 22;
+    }
+    const t = drawText(ctx, card.title, {
+      x: PAD, y: y, size: 104, weight: 800, color: theme.ink,
+      lineHeight: 1.16, maxLines: 3, maxHeight: 380, minSize: 62
+    });
+    if (brand) {
+      drawText(ctx, brand, { x: PAD, y: H - 110, size: 28, weight: 400, color: theme.dim, maxLines: 1 });
+    }
+    return t;
+  }
+
+  function drawBody(ctx, card, ctx2) {
+    const { theme, photo, tiles, index, total } = ctx2;
+    paintBackdrop(ctx, theme, photo, { blur: 26, veil: 0.66, veilColor: theme.turnBg });
+    pageMark(ctx, theme, index, total);
+
+    // 사진이 없으면 글만 남으므로 시작 위치를 내려 화면 가운데로 모은다
+    let y = (tiles && tiles.length) ? 170 : 330;
+    if (card.step) {
+      ctx.beginPath();
+      ctx.arc(PAD + 38, y + 38, 38, 0, Math.PI * 2);
+      ctx.fillStyle = theme.accent;
+      ctx.fill();
+      ctx.font = '700 40px ' + FONT;
+      ctx.fillStyle = theme.bg;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(card.step), PAD + 38, y + 40);
+      ctx.textAlign = 'left';
+      y += 110;
+    }
+    const t = drawText(ctx, card.title, {
+      x: PAD, y: y, size: 78, weight: 800, color: theme.ink,
+      lineHeight: 1.16, maxLines: 3, maxHeight: 300, minSize: 52
+    });
+    let by = t.bottom + 46;
+    if (card.body.length) {
+      const b = drawText(ctx, card.body.join('\n'), {
+        x: PAD, y: by, size: 40, weight: 400, color: theme.sub,
+        lineHeight: 1.6, maxHeight: 300, minSize: 30
+      });
+      by = b.bottom;
+    }
+    if (!(tiles && tiles.length)) accentRule(ctx, theme, by + 60);
+    layoutTiles(ctx, tiles, 760);
+  }
+
+  /** 글만 있는 장이 허전하지 않도록 아래에 짧은 강조선을 둔다 */
+  function accentRule(ctx, theme, y) {
+    ctx.fillStyle = hexToRgba(theme.accent, 0.5);
+    ctx.fillRect(PAD, y, 120, 4);
+  }
+
+  function drawTurn(ctx, card, ctx2) {
+    const { theme, index, total } = ctx2;
+    ctx.fillStyle = theme.turnBg;
+    ctx.fillRect(0, 0, W, H);
+    pageMark(ctx, theme, index, total, theme.dim);
+    const text = [card.title].concat(card.body || []).join('\n');
+    drawText(ctx, text, {
+      x: PAD, y: 400, size: 86, weight: 800, color: theme.name === '따뜻한 종이' ? '#FFFFFF' : theme.ink,
+      lineHeight: 1.3, maxHeight: 560, minSize: 54
+    });
+  }
+
+  function drawOutro(ctx, card, ctx2) {
+    const { theme, photo, tiles, index, total } = ctx2;
+    paintBackdrop(ctx, theme, photo, { blur: 26, veil: 0.7, veilColor: theme.turnBg });
+    pageMark(ctx, theme, index, total);
+
+    const top = (tiles && tiles.length) ? 230 : 330;
+    const t = drawText(ctx, card.title, {
+      x: PAD, y: top, size: 68, weight: 800, color: theme.ink,
+      lineHeight: 1.24, maxLines: 3, maxHeight: 260, minSize: 46
+    });
+    let y = t.bottom + 50;
+    ctx.fillStyle = hexToRgba(theme.accent, 0.35);
+    ctx.fillRect(PAD, y, W - PAD * 2, 3);
+    y += 50;
+    if (card.body.length) {
+      const b = drawText(ctx, card.body.join('\n'), {
+        x: PAD, y: y, size: 40, weight: 400, color: theme.sub, lineHeight: 1.55, minSize: 30
+      });
+      y = b.bottom + 26;
+    }
+    if (card.cta) {
+      drawText(ctx, card.cta, {
+        x: PAD, y: y, size: 44, weight: 700, color: theme.accent, lineHeight: 1.45, minSize: 32
+      });
+    }
+    if (tiles && tiles[0]) photoTile(ctx, tiles[0], 320, 850, 440, -2);
+  }
+
+  function layoutTiles(ctx, tiles, top) {
+    if (!tiles || !tiles.length) return;
+    if (tiles.length === 1) { photoTile(ctx, tiles[0], 300, top + 40, 460, -2); return; }
+    photoTile(ctx, tiles[0], 90, top, 420, -3);
+    photoTile(ctx, tiles[1], 570, top + 140, 420, 4);
+    if (tiles[2]) photoTile(ctx, tiles[2], 330, top + 300, 300, 2);
+  }
+
+  function pageMark(ctx, theme, index, total, color) {
+    if (!total) return;
+    ctx.font = '400 30px ' + FONT;
+    ctx.fillStyle = color || theme.dim;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText((index + 1) + ' / ' + total, W - PAD, 70);
+    ctx.textAlign = 'left';
+  }
+
+  /* ───────── 바깥에서 쓰는 것 ───────── */
+
+  /**
+   * 카드 하나를 캔버스에 그린다.
+   * opts: { theme, photo, tiles, index, total, brand }
+   */
+  function renderCard(canvas, card, opts) {
+    const o = opts || {};
+    const theme = THEMES[o.theme] || THEMES.night;
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = theme.bg;
+    ctx.fillRect(0, 0, W, H);
+    const env = {
+      theme: theme, photo: o.photo || null, tiles: o.tiles || [],
+      index: o.index || 0, total: o.total || 0, brand: o.brand || ''
+    };
+    if (card.kind === 'hook') drawHook(ctx, card, env);
+    else if (card.kind === 'turn') drawTurn(ctx, card, env);
+    else if (card.kind === 'outro') drawOutro(ctx, card, env);
+    else drawBody(ctx, card, env);
+    return canvas;
+  }
+
+  /** 카드 순서대로 사진을 나눠 준다 — 배경 1장 + 타일 2장씩, 부족하면 돌려 쓴다 */
+  function assignPhotos(cards, photos) {
+    const list = photos || [];
+    return cards.map((card, i) => {
+      if (!list.length) return { photo: null, tiles: [] };
+      const bg = list[i % list.length];
+      if (card.kind === 'turn') return { photo: null, tiles: [] };
+      if (card.kind === 'hook') return { photo: bg, tiles: [] };
+      const tiles = [];
+      const want = card.kind === 'outro' ? 1 : 2;
+      for (let k = 1; k <= want; k++) tiles.push(list[(i + k) % list.length]);
+      return { photo: bg, tiles: tiles };
+    });
+  }
+
+  global.CarouselRender = {
+    renderCard: renderCard, assignPhotos: assignPhotos,
+    THEMES: THEMES, WIDTH: W, HEIGHT: H
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* ── js/carousel-app.js ── */
+/**
+ * 카드뉴스 생성기 화면 — 주제를 넣으면 카피(Claude) → 카드 그림(캔버스) → PNG까지 잇는다.
+ * API 호출은 앱 본체와 같은 js/llm.js를 그대로 쓴다.
+ */
+(function () {
+  'use strict';
+
+  const LS_KEY = 'carousel_last_v1';
+  const $ = (sel) => document.querySelector(sel);
+
+  const state = { data: null, photos: [], credits: [], busy: false, abort: null };
+
+  /* ───────── 화면 준비 ───────── */
+
+  function init() {
+    fillThemes();
+    fillModels();
+    restore();
+    $('#gen').addEventListener('click', run);
+    $('#sample').addEventListener('click', showSample);
+    $('#theme').addEventListener('change', paint);
+    $('#brand').addEventListener('input', debounce(paint, 250));
+    $('#photos').addEventListener('change', loadPhotos);
+    $('#autoPhotos').addEventListener('click', autoPhotos);
+    $('#copyPrompts').addEventListener('click', copyPrompts);
+    $('#pexelsKey').addEventListener('change', () => {
+      CarouselPhotos.set({ apiKey: $('#pexelsKey').value.trim() });
+      updatePhotoHint();
+    });
+    $('#saveAll').addEventListener('click', saveAll);
+    $('#copyCaption').addEventListener('click', copyCaption);
+    $('#key').addEventListener('change', () => {
+      LLM.set({ apiKey: $('#key').value.trim(), model: $('#model').value });
+      updateKeyHint();
+    });
+    $('#model').addEventListener('change', () => LLM.set({ model: $('#model').value }));
+    updateKeyHint();
+    $('#pexelsKey').value = CarouselPhotos.get().apiKey || '';
+    updatePhotoHint();
+  }
+
+  function fillThemes() {
+    const sel = $('#theme');
+    Object.keys(CarouselRender.THEMES).forEach((id) => {
+      const o = document.createElement('option');
+      o.value = id;
+      o.textContent = CarouselRender.THEMES[id].name;
+      sel.appendChild(o);
+    });
+  }
+
+  function fillModels() {
+    const sel = $('#model');
+    LLM.MODELS.forEach((m) => {
+      const o = document.createElement('option');
+      o.value = m.id;
+      o.textContent = m.name + ' — ' + m.hint;
+      sel.appendChild(o);
+    });
+    const s = LLM.get();
+    sel.value = s.model;
+    $('#key').value = s.apiKey || '';
+  }
+
+  function updateKeyHint() {
+    const ready = LLM.ready();
+    $('#keyHint').textContent = ready
+      ? '키가 저장돼 있습니다 (' + LLM.maskKey(LLM.get().apiKey) + '). 이 브라우저에만 남습니다.'
+      : 'API 키가 없으면 생성 버튼이 동작하지 않습니다. 키 없이 레이아웃만 보려면 「샘플로 보기」를 누르세요.';
+    $('#gen').disabled = !ready || state.busy;
+  }
+
+  /* ───────── 생성 ───────── */
+
+  async function run() {
+    if (state.busy) return;
+    const topic = $('#topic').value.trim();
+    if (!topic) { alert('주제나 제목을 먼저 넣어 주세요.'); $('#topic').focus(); return; }
+
+    const input = {
+      topic: topic,
+      audience: $('#audience').value,
+      message: $('#message').value,
+      tone: $('#tone').value,
+      platform: $('#platform').value,
+      density: $('#density').value
+    };
+
+    setBusy(true, '카피를 쓰는 중…');
+    state.abort = new AbortController();
+    try {
+      const text = await LLM.stream({
+        prompt: CarouselPrompt.build(input),
+        maxTokens: 8000,
+        signal: state.abort.signal,
+        onThinking: (t) => setStatus(t ? '생각하는 중…' : '카피를 쓰는 중…'),
+        onToken: (_chunk, full) => setStatus('카피를 쓰는 중… ' + full.length + '자')
+      });
+      state.data = CarouselPrompt.parse(text);
+      save();
+      paint();
+      setStatus('완성됐습니다. 카드를 확인하고 PNG로 내려받으세요.');
+    } catch (e) {
+      if (e && e.name === 'AbortError') setStatus('중단했습니다.');
+      else { setStatus(''); alert(e.message || String(e)); }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function setBusy(on, msg) {
+    state.busy = on;
+    $('#gen').disabled = on || !LLM.ready();
+    $('#gen').textContent = on ? '생성 중…' : '카드뉴스 만들기';
+    if (msg) setStatus(msg);
+  }
+
+  function setStatus(msg) { $('#status').textContent = msg || ''; }
+
+  /* ───────── 그리기 ───────── */
+
+  function paint() {
+    const data = state.data;
+    const wrap = $('#cards');
+    wrap.innerHTML = '';
+    if (!data) { $('#result').hidden = true; return; }
+    $('#result').hidden = false;
+
+    const theme = $('#theme').value;
+    const brand = $('#brand').value.trim();
+    // 자동 채우기는 장별로 이미 짝지어져 있고(길이가 카드 수와 같다),
+    // 직접 올린 사진은 순환 배치한다.
+    const paired = state.photos.length === data.cards.length && state.photos.some((x) => x === null);
+    const shots = paired ? pairShots(data.cards, state.photos)
+                         : CarouselRender.assignPhotos(data.cards, state.photos);
+
+    data.cards.forEach((card, i) => {
+      const fig = document.createElement('figure');
+      fig.className = 'card';
+      const canvas = document.createElement('canvas');
+      CarouselRender.renderCard(canvas, card, {
+        theme: theme, brand: brand, index: i, total: data.cards.length,
+        photo: shots[i].photo, tiles: shots[i].tiles
+      });
+      const cap = document.createElement('figcaption');
+      cap.innerHTML = '<span>' + (i + 1) + '. ' + kindLabel(card.kind) + '</span>';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mini';
+      btn.textContent = 'PNG';
+      btn.addEventListener('click', () => download(canvas, i + 1));
+      cap.appendChild(btn);
+      fig.appendChild(canvas);
+      fig.appendChild(cap);
+      wrap.appendChild(fig);
+    });
+
+    paintChecks(CarouselPrompt.check(data));
+    $('#caption').value = buildCaption(data);
+    $('#meta').textContent = [data.topic, data.audience, data.message].filter(Boolean).join(' · ');
+  }
+
+  /** 장별로 짝지어진 사진: 배경은 자기 사진, 타일은 앞뒤 장 사진을 빌려 쓴다 */
+  function pairShots(cards, imgs) {
+    const pool = imgs.filter(Boolean);
+    return cards.map((card, i) => {
+      const own = imgs[i] || null;
+      if (card.kind === 'turn') return { photo: null, tiles: [] };
+      if (card.kind === 'hook') return { photo: own, tiles: [] };
+      const tiles = [];
+      const want = card.kind === 'outro' ? 1 : 2;
+      for (let k = 0; k < want && pool.length; k++) {
+        tiles.push(pool[(i + k) % pool.length]);
+      }
+      return { photo: own, tiles: tiles };
+    });
+  }
+
+  function kindLabel(kind) {
+    return { hook: '훅', turn: '전환', step: '해법', outro: '회수·CTA' }[kind] || '본문';
+  }
+
+  function paintChecks(list) {
+    const box = $('#checks');
+    box.innerHTML = '';
+    if (!list.length) {
+      box.innerHTML = '<li class="ok">세 룰 통과 — 남은 건 사람이 볼 부분입니다. 훅이 정말 궁금한지, 전환에 힘이 있는지.</li>';
+      return;
+    }
+    list.forEach((c) => {
+      const li = document.createElement('li');
+      li.className = c.level;
+      li.textContent = c.text;
+      box.appendChild(li);
+    });
+  }
+
+  function buildCaption(data) {
+    const tags = (data.hashtags || []).join(' ');
+    return [data.caption || '', '', tags].join('\n').trim();
+  }
+
+  /* ───────── 사진 ───────── */
+
+  function updatePhotoHint() {
+    $('#photoHint').textContent = CarouselPhotos.ready()
+      ? '키가 저장돼 있습니다. 「사진 자동 채우기」를 누르면 장별 검색어로 찾아 넣습니다.'
+      : '무료 키는 pexels.com/api 에서 발급받습니다. 키가 없으면 직접 올리거나 색면으로 씁니다.';
+  }
+
+  /** 카피가 만들어 준 장별 검색어로 스톡 사진을 찾아 채운다 */
+  async function autoPhotos() {
+    if (!state.data) { alert('먼저 카드뉴스를 만들어 주세요.'); return; }
+    if (!CarouselPhotos.ready()) { alert('Pexels API 키를 먼저 넣어 주세요. (사진 설정에 있습니다)'); return; }
+    const btn = $('#autoPhotos');
+    btn.disabled = true;
+    try {
+      const res = await CarouselPhotos.fill(state.data.cards, {
+        fallbackQuery: state.data.topic || '',
+        onProgress: (i, n, q) => setStatus('사진 찾는 중… ' + (i + 1) + '/' + n + ' · ' + q)
+      });
+      state.photos = res.images;      // 장별로 이미 짝지어진 배열
+      state.credits = res.credits;
+      paint();
+      const got = res.images.filter(Boolean).length;
+      setStatus('사진 ' + got + '장을 넣었습니다.' + (res.misses.length ? ' 못 찾은 검색어: ' + res.misses.join(', ') : ''));
+    } catch (e) {
+      setStatus('');
+      alert(e.message || String(e));
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function copyPrompts() {
+    if (!state.data) return;
+    const sheet = CarouselPhotos.promptSheet(state.data);
+    if (!sheet) { setStatus('이 카피에는 사진 프롬프트가 없습니다. 다시 생성해 보세요.'); return; }
+    navigator.clipboard.writeText(sheet).then(
+      () => setStatus('사진 프롬프트를 복사했습니다. 이미지 생성 도구에 붙여넣으세요.'),
+      () => { $('#caption').value = sheet; setStatus('복사가 막혀 아래 상자에 넣었습니다.'); }
+    );
+  }
+
+
+  function loadPhotos(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) { state.photos = []; paint(); return; }
+    let left = files.length;
+    const imgs = [];
+    files.forEach((file, i) => {
+      const img = new Image();
+      img.onload = () => { imgs[i] = img; if (--left === 0) { state.photos = imgs.filter(Boolean); paint(); } };
+      img.onerror = () => { if (--left === 0) { state.photos = imgs.filter(Boolean); paint(); } };
+      img.src = URL.createObjectURL(file);
+      state.credits = [];
+    });
+    setStatus(files.length + '장을 배경과 사진으로 씁니다.');
+  }
+
+  /* ───────── 내보내기 ───────── */
+
+  function download(canvas, n) {
+    if (!CarouselPhotos.exportable(canvas)) {
+      setStatus('사진의 출처 정책 때문에 PNG로 저장할 수 없습니다. 사진을 직접 올려 쓰면 저장됩니다.');
+      return;
+    }
+    canvas.toBlob((blob) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'card-' + String(n).padStart(2, '0') + '.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }, 'image/png');
+  }
+
+  function saveAll() {
+    const list = Array.from(document.querySelectorAll('#cards canvas'));
+    list.forEach((c, i) => setTimeout(() => download(c, i + 1), i * 350));
+    setStatus(list.length + '장을 내려받는 중입니다. 브라우저가 여러 파일 저장을 물어보면 허용하세요.');
+  }
+
+  function copyCaption() {
+    const el = $('#caption');
+    el.select();
+    navigator.clipboard.writeText(el.value).then(
+      () => setStatus('캡션을 복사했습니다.'),
+      () => setStatus('복사가 막혔습니다 — 캡션 상자에서 직접 복사하세요.')
+    );
+  }
+
+  /* ───────── 저장 / 샘플 ───────── */
+
+  function save() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state.data)); } catch (e) { /* 무시 */ }
+  }
+
+  function restore() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) { state.data = JSON.parse(raw); paint(); }
+    } catch (e) { /* 무시 */ }
+  }
+
+  function showSample() {
+    state.data = SAMPLE;
+    paint();
+    setStatus('샘플입니다. 주제를 넣고 「카드뉴스 만들기」를 누르면 내 주제로 바뀝니다.');
+  }
+
+  const SAMPLE = {
+    topic: '저속노화 — 노화 속도를 늦추는 하루 습관',
+    audience: '관리한다고 하는데 컨디션이 그대로인 30~40대',
+    message: '노화는 더 챙겨서가 아니라 덜 무너져서 늦춰진다',
+    cards: [
+      { kind: 'hook', kicker: '저속노화 · 하루 습관 읽기', title: '노화는\n어젯밤에 정해집니다', body: [], photoQuery: 'dark bedroom dawn light', photoPrompt: 'Cinematic dawn bedroom, thin shaft of warm light through curtains, deep shadows, no text, no letters, no watermark' },
+      { kind: 'body', photoQuery: 'tired morning window', photoPrompt: 'Person sitting on a bed at dawn seen from behind, soft window light, muted tones, no text, no letters, no watermark', title: '관리한다고는 합니다', body: ['그런데 아침마다 더 피곤합니다', '일곱 시간을 자도 개운하지 않고', '오후 세 시면 단 게 당깁니다'] },
+      { kind: 'body', photoQuery: 'supplements table still life', photoPrompt: 'Supplement bottles on a wooden table in dim morning light, quiet still life, no text, no letters, no watermark', title: '영양제는 늘었는데\n컨디션은 그대로입니다', body: ['좋다는 건 검색해서 다 해봤습니다', '그런데 진짜 문제는 여기가 아닙니다'] },
+      { kind: 'body', photoQuery: 'busy desk planner', photoPrompt: 'A crowded desk with a planner and coffee, warm daylight, sense of too much to do, no text, no letters, no watermark', title: '다들 뭘 더\n챙기라고 합니다', body: ['그래서 할 일이 계속 쌓입니다', '바쁜 주가 오면 제일 먼저 밀립니다'] },
+      { kind: 'turn', title: '하지만\n노화를 늦추는 건\n더 하는 게 아니라\n덜 무너지는 겁니다', body: [] },
+      { kind: 'step', step: 1, photoQuery: 'bedside lamp night', photoPrompt: 'A hand switching off a warm bedside lamp at night, amber glow fading, no text, no letters, no watermark', title: '밤에 몸을 식힙니다', body: ['잠은 체온이 내려갈 때 깊어집니다', '자기 한두 시간 전 미지근하게 씻고', '방은 조금 서늘하게 둡니다'] },
+      { kind: 'step', step: 2, photoQuery: 'healthy meal plate salad', photoPrompt: 'Overhead shot of a simple healthy meal, salad and grilled chicken on a ceramic plate, natural daylight, no text, no letters, no watermark', title: '혈당을\n출렁이게 두지 않습니다', body: ['채소 먼저, 단백질 다음, 밥은 마지막', '식후 10분만 걸어도 도움이 됩니다'] },
+      { kind: 'step', step: 3, photoQuery: 'dumbbell gym dark', photoPrompt: 'Close-up of a hand gripping a dumbbell in a dim gym, strong directional light, no text, no letters, no watermark', title: '근육은\n노화의 브레이크입니다', body: ['근육은 30대부터 조금씩 줄어듭니다', '주 2회, 다리와 등처럼 큰 근육부터'] },
+      { kind: 'outro', photoQuery: 'morning stretch window', photoPrompt: 'Silhouette of a person stretching in front of a bright window in the morning, backlit, calm mood, no text, no letters, no watermark', title: '노화는 어젯밤에 정해졌고\n오늘 밤도 정해집니다', body: ['세 가지를 다 할 필요는 없습니다', '오늘 밤 하나만 골라도 충분합니다'], cta: '저장해두고 오늘 밤 한 가지만 해보세요' }
+    ],
+    caption: '관리하는데 왜 그대로일까요.\n\n몸은 더 챙긴 것보다 덜 무너진 쪽을 기억합니다. 밤에 잘 식은 몸, 출렁이지 않은 혈당, 버텨준 근육. 이 세 가지가 다음 날의 컨디션을 만듭니다.\n\n오늘 세 가지를 다 하려고 하지 마세요. 하나만 고르는 게 훨씬 오래 갑니다.',
+    hashtags: ['#저속노화', '#웰니스', '#건강루틴', '#수면습관', '#혈당관리', '#근력운동', '#자기관리', '#컨디션관리', '#루틴만들기']
+  };
+
+  function debounce(fn, ms) {
+    let t;
+    return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+  window.CarouselApp = { paint: paint, showSample: showSample };
+})();
+
+</script>
+</body>
+</html>
