@@ -1,1 +1,4 @@
 node_modules/
+
+# 업로드로 받은 플러그인의 로컬 산출물
+vendor/im-not-ai/tests/**/__pycache__/
