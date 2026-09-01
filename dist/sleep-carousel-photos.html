@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>수면 카드뉴스 — 사진 버전</title>
+<style>
+  body { font-family: 'Pretendard', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif; background:#1b1815; color:#eee; margin:0; padding:32px; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  p.note { color:#b9b2a8; font-size:14px; margin:0 0 24px; line-height:1.6; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:20px; }
+  .card { background:#000; border-radius:12px; overflow:hidden; }
+  canvas { width:100%; display:block; }
+  .row { margin-top:8px; display:flex; gap:8px; }
+  button { flex:1; padding:8px; border:0; border-radius:8px; background:#E8DCC8; color:#12100E; font-weight:700; cursor:pointer; font-size:13px; }
+  #status { margin-top:20px; font-size:13px; color:#e8dcc8; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<h1>잠을 오래 자도 계속 피곤하다면 — 카드뉴스 (사진 버전)</h1>
+<p class="note">이 파일을 열면 브라우저가 직접 힉스필드 CDN에서 사진을 불러와 카드에 합성합니다.
+이미지 CDN이 CORS를 막아두면 "PNG 저장" 버튼이 실패할 수 있는데, 그 경우엔 카드가 화면에는 정상적으로 보이니
+스크린샷으로 저장하거나 아래 상태 메시지를 확인해주세요.</p>
+<div id="grid"></div>
+<div id="status">불러오는 중…</div>
+
+<script>
+/* ===== js/carousel-render.js 인라인 ===== */
+(function (global) {
+  'use strict';
+
+  const W = 1080;
+  const H = 1350;
+  const PAD = 80;
+  const FONT = "'Pretendard', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif";
+
+  const THEMES = {
+    night: { name: '어두운 밤', bg: '#12100E', ink: '#FFFFFF', sub: '#D9CFC2',
+             dim: '#B9B2A8', accent: '#E8DCC8', turnBg: '#0B0B0C',
+             grad: ['#241d16', '#12100e'] },
+    ocean: { name: '딥 블루', bg: '#0C1522', ink: '#FFFFFF', sub: '#C6D4E4',
+             dim: '#93A4B8', accent: '#7FB2F0', turnBg: '#070C14',
+             grad: ['#16283f', '#0c1522'] },
+    paper: { name: '따뜻한 종이', bg: '#F3EDE4', ink: '#1B1815', sub: '#4A4239',
+             dim: '#7A7065', accent: '#B4542A', turnBg: '#1B1815',
+             grad: ['#faf6ef', '#ece3d6'] }
+  };
+
+  function wrap(ctx, text, maxWidth) {
+    const out = [];
+    String(text || '').split('\n').forEach((para) => {
+      if (!para.trim()) { out.push(''); return; }
+      let line = '';
+      para.split(' ').forEach((word) => {
+        const next = line ? line + ' ' + word : word;
+        if (ctx.measureText(next).width <= maxWidth) { line = next; return; }
+        if (line) out.push(line);
+        if (ctx.measureText(word).width <= maxWidth) { line = word; return; }
+        let piece = '';
+        for (const ch of word) {
+          if (ctx.measureText(piece + ch).width > maxWidth) { out.push(piece); piece = ch; }
+          else piece += ch;
+        }
+        line = piece;
+      });
+      out.push(line);
+    });
+    return out;
+  }
+
+  function drawText(ctx, text, opts) {
+    const o = opts || {};
+    const maxWidth = o.maxWidth || (W - PAD * 2);
+    const weight = o.weight || 400;
+    const lh = o.lineHeight || 1.5;
+    let size = o.size;
+    let lines;
+    for (;;) {
+      ctx.font = weight + ' ' + size + 'px ' + FONT;
+      lines = wrap(ctx, text, maxWidth);
+      const fits = (!o.maxLines || lines.length <= o.maxLines) &&
+                   (!o.maxHeight || lines.length * size * lh <= o.maxHeight);
+      if (fits || size <= (o.minSize || 28)) break;
+      size -= 2;
+    }
+    ctx.fillStyle = o.color || '#fff';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    let y = o.y;
+    lines.forEach((line) => {
+      ctx.fillText(line, o.x, y + (size * lh - size) / 2);
+      y += size * lh;
+    });
+    return { bottom: y, size: size, lines: lines.length };
+  }
+
+  function paintBackdrop(ctx, theme, photo, opts) {
+    const o = opts || {};
+    ctx.save();
+    if (photo) {
+      ctx.filter = 'blur(' + (o.blur == null ? 14 : o.blur) + 'px)';
+      coverDraw(ctx, photo, -60, -60, W + 120, H + 120);
+      ctx.filter = 'none';
+    } else {
+      const g = ctx.createLinearGradient(0, 0, W * 0.6, H);
+      g.addColorStop(0, theme.grad[0]);
+      g.addColorStop(1, theme.grad[1]);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+    if (o.veil !== 0) {
+      ctx.fillStyle = hexToRgba(o.veilColor || '#0B0B0C', o.veil == null ? 0.44 : o.veil);
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function coverDraw(ctx, img, x, y, w, h) {
+    const ir = img.width / img.height;
+    const rr = w / h;
+    let sw = img.width, sh = img.height, sx = 0, sy = 0;
+    if (ir > rr) { sw = img.height * rr; sx = (img.width - sw) / 2; }
+    else { sh = img.width / rr; sy = (img.height - sh) / 2; }
+    ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+  }
+
+  function photoTile(ctx, img, x, y, size, angle) {
+    if (!img) return;
+    ctx.save();
+    ctx.translate(x + size / 2, y + size / 2);
+    ctx.rotate((angle || 0) * Math.PI / 180);
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 34;
+    ctx.shadowOffsetY = 12;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(-size / 2, -size / 2, size, size);
+    ctx.shadowColor = 'transparent';
+    ctx.beginPath();
+    ctx.rect(-size / 2, -size / 2, size, size);
+    ctx.clip();
+    coverDraw(ctx, img, -size / 2, -size / 2, size, size);
+    ctx.restore();
+  }
+
+  function hexToRgba(hex, a) {
+    const h = hex.replace('#', '');
+    const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+
+  function drawHook(ctx, card, ctx2) {
+    const { theme, photo, brand } = ctx2;
+    paintBackdrop(ctx, theme, photo, { blur: 0, veil: 0.5 });
+    let y = H - 500;
+    if (card.kicker) {
+      const k = drawText(ctx, card.kicker, {
+        x: PAD, y: y, size: 38, weight: 700, color: theme.dim, maxLines: 1, lineHeight: 1.3
+      });
+      y = k.bottom + 22;
+    }
+    const t = drawText(ctx, card.title, {
+      x: PAD, y: y, size: 104, weight: 800, color: theme.ink,
+      lineHeight: 1.16, maxLines: 3, maxHeight: 380, minSize: 62
+    });
+    if (brand) {
+      drawText(ctx, brand, { x: PAD, y: H - 110, size: 28, weight: 400, color: theme.dim, maxLines: 1 });
+    }
+    return t;
+  }
+
+  function drawBody(ctx, card, ctx2) {
+    const { theme, photo, tiles, index, total } = ctx2;
+    paintBackdrop(ctx, theme, photo, { blur: 14, veil: 0.46, veilColor: theme.turnBg });
+    pageMark(ctx, theme, index, total);
+
+    let y = (tiles && tiles.length) ? 170 : 330;
+    if (card.step) {
+      ctx.beginPath();
+      ctx.arc(PAD + 38, y + 38, 38, 0, Math.PI * 2);
+      ctx.fillStyle = theme.accent;
+      ctx.fill();
+      ctx.font = '700 40px ' + FONT;
+      ctx.fillStyle = theme.bg;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(card.step), PAD + 38, y + 40);
+      ctx.textAlign = 'left';
+      y += 110;
+    }
+    const t = drawText(ctx, card.title, {
+      x: PAD, y: y, size: 78, weight: 800, color: theme.ink,
+      lineHeight: 1.16, maxLines: 3, maxHeight: 300, minSize: 52
+    });
+    let by = t.bottom + 46;
+    if (card.body.length) {
+      const b = drawText(ctx, card.body.join('\n'), {
+        x: PAD, y: by, size: 40, weight: 400, color: theme.sub,
+        lineHeight: 1.6, maxHeight: 300, minSize: 30
+      });
+      by = b.bottom;
+    }
+    if (!(tiles && tiles.length)) accentRule(ctx, theme, by + 60);
+    layoutTiles(ctx, tiles, 760);
+  }
+
+  function accentRule(ctx, theme, y) {
+    ctx.fillStyle = hexToRgba(theme.accent, 0.5);
+    ctx.fillRect(PAD, y, 120, 4);
+  }
+
+  function drawTurn(ctx, card, ctx2) {
+    const { theme, index, total } = ctx2;
+    ctx.fillStyle = theme.turnBg;
+    ctx.fillRect(0, 0, W, H);
+    pageMark(ctx, theme, index, total, theme.dim);
+    const text = [card.title].concat(card.body || []).join('\n');
+    drawText(ctx, text, {
+      x: PAD, y: 400, size: 86, weight: 800, color: theme.name === '따뜻한 종이' ? '#FFFFFF' : theme.ink,
+      lineHeight: 1.3, maxHeight: 560, minSize: 54
+    });
+  }
+
+  function drawOutro(ctx, card, ctx2) {
+    const { theme, photo, tiles, index, total } = ctx2;
+    paintBackdrop(ctx, theme, photo, { blur: 14, veil: 0.5, veilColor: theme.turnBg });
+    pageMark(ctx, theme, index, total);
+
+    const top = (tiles && tiles.length) ? 230 : 330;
+    const t = drawText(ctx, card.title, {
+      x: PAD, y: top, size: 68, weight: 800, color: theme.ink,
+      lineHeight: 1.24, maxLines: 3, maxHeight: 260, minSize: 46
+    });
+    let y = t.bottom + 50;
+    ctx.fillStyle = hexToRgba(theme.accent, 0.35);
+    ctx.fillRect(PAD, y, W - PAD * 2, 3);
+    y += 50;
+    if (card.body.length) {
+      const b = drawText(ctx, card.body.join('\n'), {
+        x: PAD, y: y, size: 40, weight: 400, color: theme.sub, lineHeight: 1.55, minSize: 30
+      });
+      y = b.bottom + 26;
+    }
+    if (card.cta) {
+      drawText(ctx, card.cta, {
+        x: PAD, y: y, size: 44, weight: 700, color: theme.accent, lineHeight: 1.45, minSize: 32
+      });
+    }
+    if (tiles && tiles[0]) photoTile(ctx, tiles[0], 320, 850, 440, -1.5);
+  }
+
+  function layoutTiles(ctx, tiles, top) {
+    if (!tiles || !tiles.length) return;
+    const list = tiles.slice(0, 3);
+    const gap = 28;
+    const size = Math.floor((W - PAD * 2 - gap * (list.length - 1)) / list.length);
+    const angles = [-2, 2, -1.5];
+    list.forEach((img, i) => {
+      const x = PAD + i * (size + gap);
+      photoTile(ctx, img, x, top, size, angles[i % angles.length]);
+    });
+  }
+
+  function pageMark(ctx, theme, index, total, color) {
+    if (!total) return;
+    ctx.font = '400 30px ' + FONT;
+    ctx.fillStyle = color || theme.dim;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText((index + 1) + ' / ' + total, W - PAD, 70);
+    ctx.textAlign = 'left';
+  }
+
+  function renderCard(canvas, card, opts) {
+    const o = opts || {};
+    const theme = THEMES[o.theme] || THEMES.night;
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = theme.bg;
+    ctx.fillRect(0, 0, W, H);
+    const env = {
+      theme: theme, photo: o.photo || null, tiles: o.tiles || [],
+      index: o.index || 0, total: o.total || 0, brand: o.brand || ''
+    };
+    if (card.kind === 'hook') drawHook(ctx, card, env);
+    else if (card.kind === 'turn') drawTurn(ctx, card, env);
+    else if (card.kind === 'outro') drawOutro(ctx, card, env);
+    else drawBody(ctx, card, env);
+    return canvas;
+  }
+
+  global.CarouselRender = { renderCard: renderCard, THEMES: THEMES, WIDTH: W, HEIGHT: H };
+})(window);
+</script>
+
+<script>
+/* ===== 카드 카피 (확정본) + 힉스필드 사진 매핑 ===== */
+const CARDS = [
+  { kind: 'hook', kicker: '잠을 오래 자도 피곤하다면', title: '많이 잘수록\n더 피곤합니다', body: [],
+    photoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_3BC2szsNnCM1CdcjnKPVH6vU1RF/hf_20260901_031306_4d1df757-1fe7-4d5f-a6b5-24711483b3b2.png' },
+  { kind: 'body', title: '8시간 넘게 잡니다', body: ['그런데 아침이 더 무겁습니다', '알람을 세 번은 미룹니다'],
+    photoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_3BC2szsNnCM1CdcjnKPVH6vU1RF/hf_20260901_031906_f1945f92-dd18-48b6-8675-eaa82054ff54.png' },
+  { kind: 'body', title: '커피를 늘렸습니다', body: ['그래도 오후만 되면 몸이 가라앉습니다', '그런데 진짜 문제는 여기가 아닙니다'],
+    photoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_3BC2szsNnCM1CdcjnKPVH6vU1RF/hf_20260901_031906_7c04251a-727e-4f87-95a0-2892c90ef774.png' },
+  { kind: 'body', title: '다들 더 자라고 합니다', body: ['그래서 주말마다 몰아서 잡니다'],
+    photoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_3BC2szsNnCM1CdcjnKPVH6vU1RF/hf_20260901_031906_eccbbac1-af8e-4891-83c6-8b5c6d27f964.png' },
+  { kind: 'turn', title: '하지만 피곤한 건\n잔 시간이 아니라\n무너진 리듬 때문입니다', body: [] },
+  { kind: 'step', step: 1, title: '기상 시간을\n고정합니다', body: ['주말도 평일과 비슷하게 일어납니다'],
+    photoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_3BC2szsNnCM1CdcjnKPVH6vU1RF/hf_20260901_031906_38c7e46c-f9be-498a-a16e-383b2a78fa9c.png' },
+  { kind: 'step', step: 2, title: '잠들기 전\n빛을 줄입니다', body: ['화면 밝기부터 낮춥니다'],
+    photoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_3BC2szsNnCM1CdcjnKPVH6vU1RF/hf_20260901_031906_1d3cc35f-78c8-4cc2-bd9f-e690dbe48b65.png' },
+  { kind: 'step', step: 3, title: '낮의 카페인을\n앞당깁니다', body: ['오후 카페인은 잠을 얕게 만듭니다'],
+    photoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_3BC2szsNnCM1CdcjnKPVH6vU1RF/hf_20260901_031907_a5cecd90-22c4-421d-8b98-7da7cc175a46.png' },
+  { kind: 'outro', title: '많이 자도 안 풀렸던 건\n리듬이 무너져서였습니다', body: [], cta: '저장해두고 오늘 밤 기상 시간부터 맞춰보세요',
+    photoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_3BC2szsNnCM1CdcjnKPVH6vU1RF/hf_20260901_031907_506db80c-a286-4a74-8f59-63c080183592.png' }
+];
+
+const grid = document.getElementById('grid');
+const statusEl = document.getElementById('status');
+const canvases = [];
+
+CARDS.forEach((card, i) => {
+  const wrap = document.createElement('div');
+  wrap.className = 'card';
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  const row = document.createElement('div');
+  row.className = 'row';
+  const btn = document.createElement('button');
+  btn.textContent = (i + 1) + '장 PNG 저장';
+  btn.onclick = () => download(canvas, i + 1);
+  row.appendChild(btn);
+  grid.appendChild(wrap);
+  grid.appendChild(row);
+  canvases.push(canvas);
+});
+
+function loadImage(url) {
+  return new Promise((resolve) => {
+    if (!url) { resolve(null); return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function download(canvas, n) {
+  try {
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sleep-card-' + n + '.png';
+    a.click();
+  } catch (e) {
+    alert((n) + '장: 이미지 CDN이 CORS를 막고 있어 자동 저장이 안 됩니다.\n화면에 보이는 카드를 스크린샷으로 저장해주세요.');
+  }
+}
+
+async function run() {
+  let ok = 0, fail = 0;
+  for (let i = 0; i < CARDS.length; i++) {
+    const card = CARDS[i];
+    const img = await loadImage(card.photoUrl);
+    if (card.photoUrl) { if (img) ok++; else fail++; }
+    const tiles = (card.kind === 'body' || card.kind === 'outro') && img ? [img] : [];
+    CarouselRender.renderCard(canvases[i], card, {
+      theme: 'night', photo: img, tiles: tiles,
+      index: i, total: CARDS.length, brand: 'Sleep Log | 수면의 질'
+    });
+  }
+  statusEl.textContent = '완료 — 사진 로드 성공 ' + ok + '장 / 실패 ' + fail + '장.\n' +
+    '카드가 화면에 정상적으로 보이면 "PNG 저장"을 눌러보세요. 실패하면 스크린샷으로 저장하면 됩니다.';
+}
+run();
+</script>
+</body>
+</html>
