@@ -1,0 +1,16 @@
+{
+  "name": "stretchme-naver-blog-writer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "스트레치미 네이버 블로그 초안 자동 작성/임시저장 도구 (발행은 항상 사람이)",
+  "scripts": {
+    "setup-login": "node scripts/naver_login.js",
+    "write": "node scripts/naver_draft.js",
+    "probe": "node scripts/probe_selectors.js",
+    "mosaic": "node scripts/mosaic.js"
+  },
+  "dependencies": {
+    "playwright": "^1.47.0",
+    "sharp": "^0.33.5"
+  }
+}

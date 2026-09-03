@@ -1,0 +1,15 @@
+node_modules/
+naver-profile/
+
+# 개인 사진/영상 원본은 커밋하지 않는다 (개인정보 포함 가능)
+input/photos/*
+!input/photos/.gitkeep
+!input/photos/_mosaic
+input/photos/_mosaic/*
+!input/photos/_mosaic/.gitkeep
+input/videos/*
+!input/videos/.gitkeep
+
+# 생성되는 초안/검증 산출물은 커밋하지 않는다
+drafts/*
+!drafts/.gitkeep

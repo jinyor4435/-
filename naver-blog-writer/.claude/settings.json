@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Write(./drafts/**)",
+      "Write(./input/photos/_mosaic/**)",
+      "Edit(./data/**)",
+      "Edit(./drafts/**)",
+      "Bash(node scripts/naver_login.js)",
+      "Bash(node scripts/naver_draft.js*)",
+      "Bash(node scripts/mosaic.js*)",
+      "Bash(node scripts/probe_selectors.js*)",
+      "Bash(npm install)",
+      "Bash(npx playwright install chromium)"
+    ]
+  }
+}
