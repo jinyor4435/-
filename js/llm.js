@@ -11,7 +11,7 @@
   'use strict';
 
   const LS_KEY = 'gfp_llm_v1';
-  const ENDPOINT = 'https://api.anthropic.com/v1/messages';
+  const DEFAULT_BASE_URL = 'https://api.anthropic.com';
   const API_VERSION = '2023-06-01';
 
   const MODELS = [
@@ -19,7 +19,17 @@
     { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', hint: '빠르고 저렴' }
   ];
 
-  const DEFAULTS = { apiKey: '', model: 'claude-opus-5', thinking: true };
+  const DEFAULTS = { apiKey: '', model: 'claude-opus-5', thinking: true, baseUrl: '' };
+
+  /**
+   * 기본값은 공식 Anthropic API. baseUrl을 지정하면 로컬 프록시 등
+   * Anthropic Messages API와 호환되는 다른 엔드포인트로 요청을 보낸다.
+   * (예: http://localhost:20128/v1)
+   */
+  function endpointFor(baseUrl) {
+    const base = (baseUrl || '').trim().replace(/\/+$/, '') || DEFAULT_BASE_URL;
+    return /\/v1$/.test(base) ? base + '/messages' : base + '/v1/messages';
+  }
 
   let settings = null;
 
@@ -111,6 +121,7 @@
     const s = get();
     const key = (o.apiKey || s.apiKey || '').trim();
     if (!key) throw Object.assign(new Error('API 키가 없습니다.'), { code: 'nokey' });
+    const endpoint = endpointFor(o.baseUrl || s.baseUrl);
 
     const body = {
       model: o.model || s.model || DEFAULTS.model,
@@ -124,7 +135,7 @@
 
     let res;
     try {
-      res = await fetch(ENDPOINT, {
+      res = await fetch(endpoint, {
         method: 'POST',
         headers: headers(key),
         body: JSON.stringify(body),
@@ -198,12 +209,13 @@
   }
 
   /** 설정 화면의 "연결 테스트" — 짧은 호출 한 번으로 키·모델·네트워크를 모두 확인한다 */
-  async function test(apiKey, model) {
+  async function test(apiKey, model, baseUrl) {
     const key = (apiKey || get().apiKey || '').trim();
     if (!key) throw Object.assign(new Error('API 키를 입력해 주세요.'), { code: 'nokey' });
+    const endpoint = endpointFor(baseUrl != null ? baseUrl : get().baseUrl);
     let res;
     try {
-      res = await fetch(ENDPOINT, {
+      res = await fetch(endpoint, {
         method: 'POST',
         headers: headers(key),
         body: JSON.stringify({
@@ -219,5 +231,5 @@
     return true;
   }
 
-  global.LLM = { get, set, clear, ready, maskKey, stream, test, MODELS, DEFAULTS };
+  global.LLM = { get, set, clear, ready, maskKey, stream, test, endpointFor, MODELS, DEFAULTS };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -302,12 +302,19 @@
           <label>모델</label>
           <select id="llmModel">${opts}</select>
         </div>
+        <details class="collapse"${s.baseUrl ? ' open' : ''}><summary>고급 — API 엔드포인트</summary>
+          <div class="inner form-grid">
+            <label>Base URL</label>
+            <input type="text" id="llmBaseUrl" value="${esc2(s.baseUrl || '')}" placeholder="기본값: https://api.anthropic.com" autocomplete="off" spellcheck="false">
+          </div>
+          <p class="hint">Anthropic Messages API와 호환되는 로컬 프록시나 게이트웨이를 쓸 때만 채우세요 (예: http://localhost:20128/v1). 비워두면 공식 Anthropic API로 나갑니다.</p>
+        </details>
         <div class="btn-row">
           <button class="btn" data-act="saveLlm">저장 · 연결 테스트</button>
           <button class="btn secondary" data-act="toggleKeyView">키 보기/숨기기</button>
           ${ready ? '<button class="btn secondary" data-act="clearLlm">키 삭제</button>' : ''}
         </div>
-        <p class="hint">키는 <b>이 브라우저에만</b> 저장되고, 요청은 앱에서 Anthropic으로 바로 나갑니다 (중계 서버 없음). 사용량만큼 API 요금이 청구됩니다.</p>
+        <p class="hint">키는 <b>이 브라우저에만</b> 저장되고, 요청은 앱에서 (설정한 엔드포인트로) 바로 나갑니다 (중계 서버 없음). 사용량만큼 API 요금이 청구됩니다.</p>
         <p class="hint">⚠ 게시된 <b>웹 링크(아티팩트)</b> 안에서는 보안 정책상 외부 통신이 막혀 자동 생성이 동작하지 않습니다. 아래 버튼으로 이 앱을 파일로 저장한 뒤, 그 파일을 브라우저로 열면 자동 생성이 동작합니다.</p>
         <div class="btn-row"><button class="btn secondary" data-act="saveSelf">⬇ 이 앱을 파일로 저장 (자동 생성용)</button></div>
       </div>`;
@@ -907,12 +914,14 @@
   function saveLlmSettings() {
     const keyEl = document.getElementById('llmKey');
     const modelEl = document.getElementById('llmModel');
+    const baseUrlEl = document.getElementById('llmBaseUrl');
     const apiKey = keyEl ? keyEl.value.trim() : '';
     const model = modelEl ? modelEl.value : LLM.get().model;
+    const baseUrl = baseUrlEl ? baseUrlEl.value.trim() : '';
     if (!apiKey) { toast('API 키를 입력해 주세요. console.anthropic.com → API Keys에서 발급합니다.', 'warn'); return; }
-    LLM.set({ apiKey, model });
+    LLM.set({ apiKey, model, baseUrl });
     toast('연결을 확인하는 중…', 'info', 2500);
-    LLM.test(apiKey, model).then(() => {
+    LLM.test(apiKey, model, baseUrl).then(() => {
       render();
       toast('연결됐습니다. 이제 각 단계의 🤖 버튼만 누르면 됩니다.', 'ok', 6000);
     }).catch((e) => {
