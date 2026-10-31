@@ -38,4 +38,8 @@ class PlaywrightPoster(Poster):
             page.wait_for_load_state("networkidle")
             browser.close()
 
-ADAPTERS = {"dummy": DummyPoster, "playwright": PlaywrightPoster}
+def make_poster(cfg):
+    if cfg["adapter"] == "appium":
+        from appium_poster import AppiumPoster
+        return AppiumPoster(cfg["appium"])
+    return {"dummy": DummyPoster, "playwright": PlaywrightPoster}[cfg["adapter"]]()

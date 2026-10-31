@@ -1,10 +1,10 @@
-"""사용법: python main.py once [--dry]   |   python main.py daemon"""
+"""사용법: python main.py once [--dry] | daemon | inspect(현재 화면 요소 출력)"""
 import json, shutil, sys, time
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 from caption import generate_caption
-from adapters import ADAPTERS, DummyPoster
+from adapters import make_poster, DummyPoster
 
 EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -18,7 +18,7 @@ def run_once(cfg, dry=False):
     if not photo:
         print("올릴 사진이 없습니다. photos/ 폴더를 채워주세요."); return
     text = generate_caption(photo, cfg)
-    poster = DummyPoster() if dry else ADAPTERS[cfg["adapter"]]()
+    poster = DummyPoster() if dry else make_poster(cfg)
     poster.post(photo, text)
     if not dry:
         used = Path(cfg["used_dir"]); used.mkdir(parents=True, exist_ok=True)
@@ -37,4 +37,6 @@ if __name__ == "__main__":
     load_dotenv()
     cfg = json.load(open("config.json", encoding="utf-8"))
     cmd = sys.argv[1] if len(sys.argv) > 1 else "once"
+    if cmd == "inspect":
+        from appium_poster import inspect; inspect(cfg["appium"]); sys.exit()
     daemon(cfg) if cmd == "daemon" else run_once(cfg, dry="--dry" in sys.argv)

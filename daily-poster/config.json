@@ -4,6 +4,53 @@
   "post_time": "21:00",
   "language": "한국어",
   "tone": "담백하고 따뜻한 일상 일기체, 2~4문장, 이모지는 최대 1개",
-  "hashtags": ["#일상", "#오늘의기록"],
-  "adapter": "dummy"
+  "hashtags": [
+    "#일상",
+    "#오늘의기록"
+  ],
+  "adapter": "appium",
+  "appium": {
+    "server": "http://127.0.0.1:4723",
+    "device": "emulator-5554",
+    "app_package": "TODO: 콜펫 패키지명 (adb shell pm list packages | grep -i pet)",
+    "app_activity": "",
+    "steps": [
+      {
+        "action": "tap",
+        "by": "desc",
+        "value": "TODO 글쓰기 버튼",
+        "after": 2
+      },
+      {
+        "action": "tap",
+        "by": "text",
+        "value": "TODO 사진/갤러리 선택",
+        "after": 2
+      },
+      {
+        "action": "tap",
+        "by": "xpath",
+        "value": "TODO 첫 번째 사진(최근 항목)",
+        "after": 1
+      },
+      {
+        "action": "tap",
+        "by": "text",
+        "value": "TODO 완료/선택",
+        "after": 2
+      },
+      {
+        "action": "type",
+        "by": "id",
+        "value": "TODO 글 입력창",
+        "text": "{caption}"
+      },
+      {
+        "action": "tap",
+        "by": "text",
+        "value": "TODO 등록/게시",
+        "after": 3
+      }
+    ]
+  }
 }
