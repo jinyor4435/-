@@ -120,7 +120,36 @@ function renderHome() {
         h('h2', { text: `${pet.name} 오늘 기록` }),
         h('div', { class: 'row' },
           quickLog(pet, 'walk', 30, '산책 30분'), quickLog(pet, 'meal', 1, '식사'), quickLog(pet, 'water', 1, '물'))),
-    h('section', { class: 'card' }, h('h2', { text: '병원 공지' }), noticesList()));
+    pet && challengeCard(pet),
+    h('section', { class: 'card' }, h('h2', { text: '병원 공지' }), noticesList()),
+    contentSection());
+}
+
+const challengeBox = h('div', {});
+function challengeCard(pet) {
+  const body = h('div', {}, h('p', { class: 'muted', text: '불러오는 중…' }));
+  Promise.all([api('GET', `/api/pets/${pet.id}/challenge`), api('GET', '/api/content')]).then(([c, content]) => {
+    const ch = content.challenge;
+    body.replaceChildren(
+      h('p', { text: `${c.round_done}/${c.days}일 완료${c.completed_rounds ? ` · 완료 ${c.completed_rounds}회` : ''}` }),
+      h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': c.days, 'aria-valuenow': c.round_done }, h('div', { class: `bar-fill w${c.round_done}` })),
+      h('ul', { class: 'list' }, ch.tasks.map((t) => h('li', { class: 'muted', text: t }))),
+      h('button', { class: 'btn small', disabled: c.checked_today, text: c.checked_today ? '오늘 체크인 완료' : '오늘 체크인', onclick: () => act(async () => {
+        const r = await api('POST', `/api/pets/${pet.id}/challenge/checkin`);
+        toast(r.completed ? `챌린지 완료! +${r.points}P` : '체크인했어요');
+      }) }));
+  }).catch(() => {});
+  challengeBox.replaceChildren(h('section', { class: 'card' }, h('h2', { text: `${pet.name}의 7일 케어 챌린지` }), body));
+  return challengeBox;
+}
+
+const contentBox = h('div', {});
+function contentSection() {
+  api('GET', '/api/content').then(({ articles }) => {
+    contentBox.replaceChildren(h('section', { class: 'card' }, h('h2', { text: '케어 콘텐츠' }),
+      articles.map((a) => h('details', {}, h('summary', { text: a.title }), h('p', { text: a.body })))));
+  }).catch(() => {});
+  return contentBox;
 }
 
 function quickLog(pet, kind, value, label) {
@@ -176,12 +205,49 @@ function petSection(pet) {
       h('div', { class: 'row between' }, h('h2', { text: `${pet.name} · ${SPECIES[pet.species]}` }), h('button', { class: 'btn ghost small', text: '수정', onclick: () => petForm(pet) })),
       h('p', { class: 'muted', text: [pet.breed, pet.weight_kg && `${pet.weight_kg}kg`, pet.birth_date && formatDate(pet.birth_date)].filter(Boolean).join(' · ') }),
       h('p', {}, '혈액형 ', pet.blood_type ? h('span', { class: `pill ${pet.blood_type_verified ? 'ok' : 'warn'}`, text: `${pet.blood_type} ${pet.blood_type_verified ? '병원 확인' : '미확인'}` }) : h('span', { class: 'pill', text: '미등록' }))),
+    reportCard(pet),
     h('section', { class: 'card' }, h('h2', { text: '병원 기록' }), records, hospitals,
       h('div', { class: 'row' }, code, h('button', { class: 'btn small', text: '병원 연결', onclick: () => act(async () => {
         await api('POST', `/api/pets/${pet.id}/hospitals`, { code: code.value });
         toast('병원을 연결했어요');
       }) }))),
+    appointmentCard(pet),
     h('section', { class: 'card' }, h('h2', { text: '일상 기록' }), logs));
+}
+
+function reportCard(pet) {
+  const box = h('div', {}, h('p', { class: 'muted', text: '정리하는 중…' }));
+  api('GET', `/api/pets/${pet.id}/report`).then(({ report }) => {
+    box.replaceChildren(
+      h('p', { class: 'disclaimer', text: report.notice }),
+      h('ul', { class: 'list' }, report.items.map((i) => h('li', {}, h('span', { class: `pill ${i.level === 'ok' ? 'ok' : i.level === 'warn' ? 'warn' : ''}`, text: i.title }), ' ', i.text))));
+  }).catch(() => box.replaceChildren(h('p', { class: 'muted', text: '리포트를 불러오지 못했어요.' })));
+  return h('section', { class: 'card' }, h('h2', { text: `${pet.name} 케어 리포트` }), box);
+}
+
+function appointmentCard(pet) {
+  const list = h('div', {});
+  const form = h('div', {});
+  const STATUS = { requested: '확인 대기', confirmed: '확정', declined: '거절', cancelled: '취소' };
+  Promise.all([api('GET', `/api/pets/${pet.id}/hospitals`), api('GET', '/api/appointments')]).then(([{ hospitals }, { appointments }]) => {
+    const mine = appointments.filter((a) => a.pet_id === pet.id);
+    list.replaceChildren(mine.length ? h('ul', { class: 'list' }, mine.slice(0, 5).map((a) => h('li', {},
+      h('strong', { text: `${a.date} ${a.time}` }), ` · ${a.hospital_name} `, h('span', { class: `pill ${a.status === 'confirmed' ? 'ok' : a.status === 'requested' ? 'warn' : ''}`, text: STATUS[a.status] }),
+      a.reason && h('p', { class: 'muted', text: a.reason }),
+      ['requested', 'confirmed'].includes(a.status) && h('button', { class: 'btn danger small', text: '예약 취소', onclick: () => act(() => api('POST', `/api/appointments/${a.id}/cancel`)) }))))
+      : h('p', { class: 'muted', text: '예정된 예약이 없어요.' }));
+    if (!hospitals.length) return form.replaceChildren(h('p', { class: 'muted', text: '병원을 연결하면 앱에서 예약할 수 있어요.' }));
+    const hosp = select(hospitals.map((x) => [String(x.id), x.name]), String(hospitals[0].id), { 'aria-label': '병원' });
+    const d = h('input', { type: 'date', 'aria-label': '날짜' });
+    const t = h('input', { type: 'time', 'aria-label': '시간', value: '10:00' });
+    const reason = h('input', { placeholder: '방문 사유 (선택)', 'aria-label': '방문 사유' });
+    form.replaceChildren(field('병원', hosp), h('div', { class: 'row' }, field('날짜', d), field('시간', t)), field('방문 사유', reason),
+      h('button', { class: 'btn small', text: '예약 요청', onclick: () => act(async () => {
+        await api('POST', `/api/pets/${pet.id}/appointments`, { hospital_id: Number(hosp.value), date: d.value, time: t.value, reason: reason.value || null });
+        toast('예약을 요청했어요. 병원이 확인하면 알려드려요.');
+      }) }));
+  }).catch(() => {});
+  return h('section', { class: 'card' }, h('h2', { text: '병원 예약' }), list, form);
 }
 
 function petForm(pet) {
@@ -238,12 +304,22 @@ function renderCallpet() {
       p.badges.length ? h('div', { class: 'row' }, p.badges.map((b) => h('span', { class: 'pill ok', text: b }))) : h('p', { class: 'muted', text: '첫 헌혈을 하면 배지를 받아요.' }),
       h('p', { class: 'muted', text: '포인트는 감사의 표시이며 현금으로 바꿀 수 없어요.' }));
   }).catch(() => {});
+  const rewards = h('div', {});
+  api('GET', '/api/rewards').then((r) => {
+    rewards.replaceChildren(h('ul', { class: 'list' }, r.rewards.map((x) => h('li', { class: 'row between' },
+      h('span', { text: `${x.name} · ${x.cost}P` }),
+      h('button', { class: 'btn ghost small', disabled: !x.affordable, text: '교환', onclick: () => act(async () => {
+        await api('POST', `/api/rewards/${x.id}/redeem`);
+        toast('교환했어요 (시연용 교환권)');
+      }) })))));
+  }).catch(() => {});
   return h('main', {},
     h('h1', { text: '콜펫' }),
     h('p', { class: 'disclaimer', text: '헌혈 가능 여부와 수혈 판단은 수의사가 최종 확인합니다. 아래 기준은 참고용이에요.' }),
     waiting.length > 0 && h('div', {}, h('h2', { text: '응답 대기' }), waiting.map(matchCard)),
     h('section', { class: 'card' }, h('h2', { text: '헌혈 등록' }), state.pets.length ? state.pets.map(donorCard) : h('p', { class: 'muted', text: '먼저 수첩에서 반려동물을 등록해 주세요.' })),
     h('section', { class: 'card' }, h('h2', { text: '나의 기여' }), points),
+    h('section', { class: 'card' }, h('h2', { text: '포인트 교환' }), h('p', { class: 'muted', text: '시연용 목록이에요. 실제 교환은 제휴가 연결된 뒤에 가능해요.' }), rewards),
     others.length > 0 && h('div', {}, h('h2', { text: '진행·지난 요청' }), others.map(matchCard)));
 }
 

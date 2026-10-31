@@ -113,6 +113,28 @@ CREATE TABLE IF NOT EXISTS points (
   reason TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS appointments (
+  id INTEGER PRIMARY KEY,
+  pet_id INTEGER NOT NULL REFERENCES pets(id) ON DELETE CASCADE,
+  hospital_id INTEGER NOT NULL REFERENCES hospitals(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  time TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','confirmed','declined','cancelled')),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS checkins (
+  pet_id INTEGER NOT NULL REFERENCES pets(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  PRIMARY KEY (pet_id, day)
+);
+CREATE TABLE IF NOT EXISTS redemptions (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reward_id TEXT NOT NULL,
+  cost INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_pets_owner ON pets(owner_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
 CREATE INDEX IF NOT EXISTS idx_matches_pet ON matches(pet_id);

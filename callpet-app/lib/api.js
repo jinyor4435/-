@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { hashPassword, verifyPassword, createSession, userFromToken } from './auth.js';
 import { checkEligibility } from './eligibility.js';
 import { findCandidates, isValidBloodType, distanceKm } from './matching.js';
+import { buildReport } from './report.js';
+import { ARTICLES, CHALLENGE, REWARDS } from './content.js';
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -539,6 +541,131 @@ export function createApi(db, { adminKey = '', now = () => new Date() } = {}) {
       fulfilled = true;
     }
     return { data: { completed: done, units: m.units, fulfilled } };
+  });
+
+  // ───── 2차: 케어 리포트(규칙 기반 요약)
+  route('GET', '/api/pets/:id/report', 'guardian', ({ user, params }) => {
+    const pet = ownPet(user, params.id);
+    const records = q(
+      `SELECT r.kind, r.date, r.memo, r.next_date, h.name AS hospital_name
+       FROM records r JOIN hospitals h ON h.id = r.hospital_id WHERE r.pet_id = ?`
+    ).all(pet.id);
+    const donor = q('SELECT * FROM donors WHERE pet_id = ?').get(pet.id);
+    return { data: { report: buildReport(pet, records, donor, now()) } };
+  });
+
+  // ───── 2차: 예약
+  const APPT_STATUS_TEXT = { confirmed: '확정', declined: '거절', cancelled: '취소' };
+  route('POST', '/api/pets/:id/appointments', 'guardian', ({ user, params, body }) => {
+    const pet = ownPet(user, params.id);
+    const hospitalId = num(body.hospital_id, '병원', { min: 1 });
+    const link = q(
+      `SELECT h.* FROM hospitals h JOIN pet_hospitals ph ON ph.hospital_id = h.id
+       WHERE h.id = ? AND ph.pet_id = ? AND h.status = 'approved'`
+    ).get(hospitalId, pet.id);
+    need(link, 404, '연결된 병원이 아닙니다. 병원 코드로 먼저 연결해 주세요.');
+    const d = date(body.date, '날짜');
+    need(d >= isoDate(now()), 400, '지난 날짜는 예약할 수 없습니다.');
+    const time = str(body.time, '시간', { max: 5 });
+    need(/^([01]\d|2[0-3]):[0-5]\d$/.test(time), 400, '시간 형식이 올바르지 않습니다.');
+    const reason = str(body.reason, '방문 사유', { max: 200, required: false });
+    const dup = q(
+      `SELECT 1 FROM appointments WHERE hospital_id = ? AND date = ? AND time = ? AND status IN ('requested','confirmed')`
+    ).get(link.id, d, time);
+    need(!dup, 409, '이미 예약이 있는 시간입니다. 다른 시간을 선택해 주세요.');
+    const info = q('INSERT INTO appointments (pet_id, hospital_id, date, time, reason, status, created_at) VALUES (?,?,?,?,?,?,?)')
+      .run(pet.id, link.id, d, time, reason, 'requested', ts());
+    notify(link.user_id, 'appointment_requested', '예약 요청', `${pet.name} ${d} ${time} 예약이 요청되었습니다.`, Number(info.lastInsertRowid));
+    return { status: 201, data: { id: Number(info.lastInsertRowid) } };
+  });
+
+  route('GET', '/api/appointments', 'guardian', ({ user }) => {
+    const appointments = q(
+      `SELECT a.id, a.pet_id, a.date, a.time, a.reason, a.status, p.name AS pet_name, h.name AS hospital_name
+       FROM appointments a JOIN pets p ON p.id = a.pet_id JOIN hospitals h ON h.id = a.hospital_id
+       WHERE p.owner_id = ? ORDER BY a.date DESC, a.time DESC LIMIT 30`
+    ).all(user.id);
+    return { data: { appointments } };
+  });
+
+  route('POST', '/api/appointments/:id/cancel', 'guardian', ({ user, params }) => {
+    const a = q(
+      `SELECT a.*, h.user_id AS hospital_user, p.name AS pet_name FROM appointments a
+       JOIN pets p ON p.id = a.pet_id JOIN hospitals h ON h.id = a.hospital_id
+       WHERE a.id = ? AND p.owner_id = ?`
+    ).get(Number(params.id), user.id);
+    need(a, 404, '예약을 찾을 수 없습니다.');
+    need(['requested', 'confirmed'].includes(a.status), 409, '이미 처리된 예약입니다.');
+    q("UPDATE appointments SET status = 'cancelled' WHERE id = ?").run(a.id);
+    notify(a.hospital_user, 'appointment_cancelled', '예약 취소', `${a.pet_name} ${a.date} ${a.time} 예약이 취소되었습니다.`, a.id);
+    return { data: { ok: true } };
+  });
+
+  route('GET', '/api/hospital/appointments', 'hospital', ({ user }) => {
+    const h = approvedHospital(user);
+    const appointments = q(
+      `SELECT a.id, a.date, a.time, a.reason, a.status, p.name AS pet_name, p.species, u.name AS guardian_name
+       FROM appointments a JOIN pets p ON p.id = a.pet_id JOIN users u ON u.id = p.owner_id
+       WHERE a.hospital_id = ? ORDER BY a.date, a.time LIMIT 100`
+    ).all(h.id);
+    return { data: { appointments } };
+  });
+
+  route('POST', '/api/hospital/appointments/:id/:action', 'hospital', ({ user, params }) => {
+    const h = approvedHospital(user);
+    needApproved(h);
+    need(['confirm', 'decline'].includes(params.action), 400, '알 수 없는 작업입니다.');
+    const a = q(
+      `SELECT a.*, p.owner_id, p.name AS pet_name FROM appointments a JOIN pets p ON p.id = a.pet_id
+       WHERE a.id = ? AND a.hospital_id = ?`
+    ).get(Number(params.id), h.id);
+    need(a, 404, '예약을 찾을 수 없습니다.');
+    need(a.status === 'requested', 409, '이미 처리된 예약입니다.');
+    const status = params.action === 'confirm' ? 'confirmed' : 'declined';
+    q('UPDATE appointments SET status = ? WHERE id = ?').run(status, a.id);
+    notify(a.owner_id, 'appointment_' + status, `예약 ${APPT_STATUS_TEXT[status]}`, `${h.name} ${a.date} ${a.time} ${a.pet_name} 예약이 ${APPT_STATUS_TEXT[status]}되었습니다.`, a.id);
+    return { data: { status } };
+  });
+
+  // ───── 2차: 케어 콘텐츠 · 7일 챌린지
+  route('GET', '/api/content', 'guardian', ({ user }) => {
+    const species = new Set(q('SELECT DISTINCT species FROM pets WHERE owner_id = ?').all(user.id).map((r) => r.species));
+    const articles = ARTICLES.filter((a) => a.species === 'all' || species.has(a.species) || species.size === 0);
+    return { data: { articles, challenge: CHALLENGE } };
+  });
+
+  function challengeState(pet) {
+    const total = q('SELECT COUNT(*) AS c FROM checkins WHERE pet_id = ?').get(pet.id).c;
+    const checkedToday = Boolean(q('SELECT 1 FROM checkins WHERE pet_id = ? AND day = ?').get(pet.id, isoDate(now())));
+    return { total, round_done: total % CHALLENGE.days, completed_rounds: Math.floor(total / CHALLENGE.days), checked_today: checkedToday, days: CHALLENGE.days };
+  }
+  route('GET', '/api/pets/:id/challenge', 'guardian', ({ user, params }) => ({ data: challengeState(ownPet(user, params.id)) }));
+  route('POST', '/api/pets/:id/challenge/checkin', 'guardian', ({ user, params }) => {
+    const pet = ownPet(user, params.id);
+    const day = isoDate(now());
+    need(!q('SELECT 1 FROM checkins WHERE pet_id = ? AND day = ?').get(pet.id, day), 409, '오늘은 이미 체크인했어요.');
+    q('INSERT INTO checkins (pet_id, day) VALUES (?, ?)').run(pet.id, day);
+    const state = challengeState(pet);
+    const completed = state.total % CHALLENGE.days === 0;
+    if (completed) {
+      addPoints(user.id, CHALLENGE.rewardPoints, 'challenge');
+      notify(user.id, 'challenge_done', '챌린지 완료', `${pet.name}와 ${CHALLENGE.name}를 완료했어요! +${CHALLENGE.rewardPoints}P`);
+    }
+    return { status: 201, data: { ...state, completed, points: completed ? CHALLENGE.rewardPoints : 0 } };
+  });
+
+  // ───── 2차: 포인트 교환(시연용 카탈로그)
+  route('GET', '/api/rewards', 'guardian', ({ user }) => {
+    const total = pointSummary(user.id).total;
+    return { data: { total, rewards: REWARDS.map((r) => ({ ...r, affordable: total >= r.cost })) } };
+  });
+  route('POST', '/api/rewards/:id/redeem', 'guardian', ({ user, params }) => {
+    const reward = REWARDS.find((r) => r.id === params.id);
+    need(reward, 404, '교환 항목을 찾을 수 없습니다.');
+    need(pointSummary(user.id).total >= reward.cost, 409, '포인트가 부족합니다.');
+    addPoints(user.id, -reward.cost, `redeem:${reward.id}`);
+    q('INSERT INTO redemptions (user_id, reward_id, cost, created_at) VALUES (?,?,?,?)').run(user.id, reward.id, reward.cost, ts());
+    return { status: 201, data: { total: pointSummary(user.id).total, reward } };
   });
 
   // ───── 관리자: 병원 승인

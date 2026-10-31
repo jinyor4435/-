@@ -52,3 +52,9 @@ input, select, textarea { font: inherit; color: var(--ink); background: var(--bg
 .center { max-width: 420px; margin: 0 auto; padding-top: 32px; }
 .hidden { display: none; }
 a { color: var(--brand); }
+.bar { height: 10px; background: var(--brand-soft); border-radius: 5px; overflow: hidden; margin: 6px 0 10px; }
+.bar-fill { height: 100%; background: var(--brand); }
+.bar-fill.w0 { width: 0; } .bar-fill.w1 { width: 14%; } .bar-fill.w2 { width: 29%; } .bar-fill.w3 { width: 43%; }
+.bar-fill.w4 { width: 57%; } .bar-fill.w5 { width: 71%; } .bar-fill.w6 { width: 86%; } .bar-fill.w7 { width: 100%; }
+details { border-bottom: 1px solid var(--line); padding: 8px 0; }
+summary { cursor: pointer; font-weight: 600; min-height: 32px; }

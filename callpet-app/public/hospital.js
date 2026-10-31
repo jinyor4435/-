@@ -1,7 +1,7 @@
 import { h, mount, api, session, toast, guard, getPosition, SPECIES, BLOOD, KIND, MATCH, formatDate, field, select } from './common.js';
 
 const root = document.getElementById('app');
-const state = { me: null, hospital: null, tab: 'requests', patients: [], requests: [], open: null, locPicked: null };
+const state = { me: null, hospital: null, tab: 'requests', patients: [], requests: [], appointments: [], open: null, locPicked: null };
 
 async function boot() {
   if (!session.token) return renderAuth();
@@ -23,9 +23,10 @@ async function boot() {
 }
 
 async function refresh() {
-  const [p, r] = await Promise.all([api('GET', '/api/hospital/patients'), api('GET', '/api/hospital/requests')]);
+  const [p, r, a] = await Promise.all([api('GET', '/api/hospital/patients'), api('GET', '/api/hospital/requests'), api('GET', '/api/hospital/appointments')]);
   state.patients = p.patients;
   state.requests = r.requests;
+  state.appointments = a.appointments;
   if (state.open) state.open = await api('GET', `/api/hospital/requests/${state.open.request.id}`).catch(() => null);
 }
 
@@ -68,9 +69,9 @@ function render() {
       h('p', { class: 'muted', text: '승인이 완료되면 새로고침해 주세요.' }),
       h('button', { class: 'btn', text: '새로고침', onclick: boot })));
   }
-  const tabs = h('div', { class: 'htabs', role: 'tablist' }, [['requests', '수혈 요청'], ['patients', '환자·기록'], ['notices', '공지']].map(([k, t]) =>
+  const tabs = h('div', { class: 'htabs', role: 'tablist' }, [['requests', '수혈 요청'], ['appointments', '예약'], ['patients', '환자·기록'], ['notices', '공지']].map(([k, t]) =>
     h('button', { class: 'tab', role: 'tab', 'aria-current': state.tab === k ? 'page' : undefined, text: t, onclick: () => { state.tab = k; render(); } })));
-  const body = { requests: renderRequests, patients: renderPatients, notices: renderNotices }[state.tab]();
+  const body = { requests: renderRequests, appointments: renderAppointments, patients: renderPatients, notices: renderNotices }[state.tab]();
   mount(root, head,
     h('p', { class: 'muted' }, '보호자 앱에서 이 코드를 입력하면 환자로 연결돼요: ', h('strong', { text: hs.code })),
     tabs, body);
@@ -146,6 +147,22 @@ function patientCard(p) {
     }) }),
     h('div', { class: 'row' }, field('검사로 확인한 혈액형', blood),
       h('button', { class: 'btn ghost small', text: '확정', onclick: () => blood.value ? act(async () => { await api('PUT', `/api/hospital/patients/${p.id}/blood-type`, { blood_type: blood.value }); toast('혈액형을 확정했어요'); }) : toast('혈액형을 선택해 주세요', 'error') })));
+}
+
+// ───────── 예약
+function renderAppointments() {
+  const STATUS = { requested: '확인 대기', confirmed: '확정', declined: '거절', cancelled: '취소' };
+  const live = state.appointments.filter((a) => a.status !== 'cancelled' && a.status !== 'declined');
+  if (!state.appointments.length) return h('p', { class: 'muted', text: '들어온 예약이 없어요.' });
+  return h('section', { class: 'card' }, h('h2', { text: `예약 (${live.length}건 진행)` }),
+    h('ul', { class: 'list' }, state.appointments.map((a) => h('li', {},
+      h('div', { class: 'row between' },
+        h('span', {}, h('strong', { text: `${a.date} ${a.time}` }), ` · ${a.pet_name} (${SPECIES[a.species]}) · ${a.guardian_name}`),
+        h('span', { class: `pill ${a.status === 'confirmed' ? 'ok' : a.status === 'requested' ? 'warn' : ''}`, text: STATUS[a.status] })),
+      a.reason && h('p', { class: 'muted', text: a.reason }),
+      a.status === 'requested' && h('div', { class: 'row' },
+        h('button', { class: 'btn small', text: '확정', onclick: () => act(() => api('POST', `/api/hospital/appointments/${a.id}/confirm`)) }),
+        h('button', { class: 'btn danger small', text: '거절', onclick: () => act(() => api('POST', `/api/hospital/appointments/${a.id}/decline`)) }))))));
 }
 
 // ───────── 공지
