@@ -1,0 +1,9 @@
+{
+  "photos_dir": "photos",
+  "used_dir": "photos/used",
+  "post_time": "21:00",
+  "language": "한국어",
+  "tone": "담백하고 따뜻한 일상 일기체, 2~4문장, 이모지는 최대 1개",
+  "hashtags": ["#일상", "#오늘의기록"],
+  "adapter": "dummy"
+}

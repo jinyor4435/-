@@ -1,0 +1,5 @@
+.env
+state.json
+photos/*
+!photos/.gitkeep
+__pycache__/
